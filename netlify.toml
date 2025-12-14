@@ -2,12 +2,10 @@
 # This file configures Netlify deployment for the React/Vite frontend
 
 [build]
-  # Base directory for the build
-  base = "halo-portal"
   # Build command
   command = "npm run build"
   # Directory to publish
-  publish = "halo-portal/dist"
+  publish = "dist"
 
 [build.environment]
   # Node.js version
