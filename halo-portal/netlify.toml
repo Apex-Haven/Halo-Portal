@@ -1,0 +1,40 @@
+# Netlify Configuration for HALO Frontend
+# This file configures Netlify deployment for the React/Vite frontend
+
+[build]
+  # Base directory for the build
+  base = "halo-portal"
+  # Build command
+  command = "npm run build"
+  # Directory to publish
+  publish = "halo-portal/dist"
+
+[build.environment]
+  # Node.js version
+  NODE_VERSION = "18"
+
+# Redirect rules for Single Page Application (SPA)
+# All routes should serve index.html for client-side routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers for security and performance
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Environment variables template (set these in Netlify dashboard)
+# VITE_API_BASE_URL=https://your-backend.onrender.com/api
+# VITE_GOOGLE_MAPS_API_KEY=your-google-maps-api-key

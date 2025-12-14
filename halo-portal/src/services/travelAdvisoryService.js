@@ -196,22 +196,6 @@ const travelAdvisoryService = {
     }
   },
 
-  /**
-   * Search hotels via CozyCozy
-   */
-  async searchCozyCozy(searchParams) {
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/travel-advisory/cozycozy/search`,
-        searchParams,
-        { headers: getHeaders() }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error searching CozyCozy:', error);
-      throw error;
-    }
-  }
 };
 
 export default travelAdvisoryService;

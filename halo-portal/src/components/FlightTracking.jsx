@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plane, MapPin, Clock, AlertCircle, CheckCircle, Navigation, RefreshCw, User, Truck, X } from 'lucide-react';
+import { Search, Plane, MapPin, Clock, AlertCircle, CheckCircle, Navigation, RefreshCw, User, Truck, X, ChevronDown, ChevronUp } from 'lucide-react';
 import flightTrackingService from '../services/flightTrackingService';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -25,6 +25,7 @@ const FlightTracking = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastSearched, setLastSearched] = useState(null);
+  const [showDataSourceInfo, setShowDataSourceInfo] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -358,49 +359,61 @@ const FlightTracking = () => {
         )}
       </div>
 
-      {/* Data Source Information */}
-      <div className="bg-card border border-border rounded-xl p-5 mb-6">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-2 h-2 bg-blue-600 dark:bg-blue-500 rounded-full" />
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white m-0">
-            Data Source Information
-          </h3>
-        </div>
+      {/* Data Source Information - Accordion */}
+      <div className="bg-card border border-border rounded-xl mb-6 overflow-hidden">
+        <button
+          onClick={() => setShowDataSourceInfo(!showDataSourceInfo)}
+          className="w-full flex items-center justify-between p-5 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-blue-600 dark:bg-blue-500 rounded-full" />
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white m-0">
+              Data Source Information
+            </h3>
+          </div>
+          {showDataSourceInfo ? (
+            <ChevronUp size={20} className="text-gray-500 dark:text-gray-400" />
+          ) : (
+            <ChevronDown size={20} className="text-gray-500 dark:text-gray-400" />
+          )}
+        </button>
         
-        <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-          <p className="m-0 mb-3 text-gray-700 dark:text-gray-300">
-            <strong className="text-gray-900 dark:text-white">Current Status:</strong> We're using free-tier APIs from external flight data providers. 
-            This means some flights may show limited information or estimated routes.
-          </p>
-          
-          <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-3">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertCircle size={16} className="text-yellow-600 dark:text-yellow-400" />
-              <span className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
-                Free Tier Limitations
-              </span>
-            </div>
-            <ul className="m-0 pl-5 text-xs text-yellow-900 dark:text-yellow-200 space-y-1">
-              <li>AviationStack: 100 requests/month limit (currently reached)</li>
-              <li>OpenSky Network: Real-time positions only, no route details</li>
-              <li>Some flights may show estimated airport information</li>
-            </ul>
-          </div>
-          
-          <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle size={16} className="text-green-600 dark:text-green-400" />
-              <span className="text-sm font-semibold text-green-800 dark:text-green-300">
-                Upcoming Improvements
-              </span>
-            </div>
-            <p className="m-0 text-xs text-green-900 dark:text-green-200">
-              When we upgrade to paid flight data services, you'll get:
-              <strong className="text-green-950 dark:text-green-100"> Complete route information, real-time status updates, terminal/gate details, 
-              and accurate departure/arrival times</strong> - just like professional flight tracking sites!
+        {showDataSourceInfo && (
+          <div className="px-5 pb-5 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+            <p className="m-0 mb-3 text-gray-700 dark:text-gray-300">
+              <strong className="text-gray-900 dark:text-white">Current Status:</strong> We're using free-tier APIs from external flight data providers. 
+              This means some flights may show limited information or estimated routes.
             </p>
+            
+            <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle size={16} className="text-yellow-600 dark:text-yellow-400" />
+                <span className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                  Free Tier Limitations
+                </span>
+              </div>
+              <ul className="m-0 pl-5 text-xs text-yellow-900 dark:text-yellow-200 space-y-1">
+                <li>AviationStack: 100 requests/month limit (currently reached)</li>
+                <li>OpenSky Network: Real-time positions only, no route details</li>
+                <li>Some flights may show estimated airport information</li>
+              </ul>
+            </div>
+            
+            <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle size={16} className="text-green-600 dark:text-green-400" />
+                <span className="text-sm font-semibold text-green-800 dark:text-green-300">
+                  Upcoming Improvements
+                </span>
+              </div>
+              <p className="m-0 text-xs text-green-900 dark:text-green-200">
+                When we upgrade to paid flight data services, you'll get:
+                <strong className="text-green-950 dark:text-green-100"> Complete route information, real-time status updates, terminal/gate details, 
+                and accurate departure/arrival times</strong> - just like professional flight tracking sites!
+              </p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Assigned Vendor Pickup Info */}

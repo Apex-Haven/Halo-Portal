@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, MapPin, Star, DollarSign, Wifi, Car, Dumbbell, Utensils, Sparkles, CheckCircle, Filter } from 'lucide-react';
+import { X, MapPin, Star, DollarSign, Wifi, Car, Dumbbell, Utensils, Sparkles, CheckCircle, Filter, Download } from 'lucide-react';
 import Drawer from './Drawer';
 import HotelCard from './HotelCard';
+import Dropdown from './Dropdown';
 import travelAdvisoryService from '../services/travelAdvisoryService';
+import { exportTravelAdvisoryToPDF } from '../utils/pdfExport';
 import toast from 'react-hot-toast';
 
 const HotelRecommendations = ({ preference, onClose, onSelectHotel }) => {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [exportLoading, setExportLoading] = useState(false);
   const [sortBy, setSortBy] = useState('relevance'); // relevance, price, distance
   const [filterDistance, setFilterDistance] = useState('all'); // all, within5km, within10km, within20km
   const fetchingRef = useRef(false); // Prevent duplicate fetches
@@ -19,6 +22,7 @@ const HotelRecommendations = ({ preference, onClose, onSelectHotel }) => {
     }
 
     if (!preference || !preference._id) {
+      console.warn('No preference or preference ID provided');
       return;
     }
 
@@ -29,34 +33,33 @@ const HotelRecommendations = ({ preference, onClose, onSelectHotel }) => {
       // First try to get existing recommendations
       let response = await travelAdvisoryService.getRecommendations(preference._id);
       
-      // If no recommendations found, try to auto-generate
-      if (response.success && (!response.recommendations || response.recommendations.length === 0)) {
-        try {
-          // Try to generate recommendations
-          const generateResponse = await travelAdvisoryService.generateRecommendations(preference._id);
-          if (generateResponse.success && generateResponse.recommendations) {
-            response = generateResponse;
-          }
-        } catch (genError) {
-          console.error('Error auto-generating recommendations:', genError);
-          // Continue with empty recommendations
-        }
-      }
-      
+      // If no recommendations found, don't auto-generate - let user trigger it manually
+      // This prevents unexpected API calls and gives user control
       if (response.success) {
         const recs = response.recommendations || [];
-        setRecommendations(recs);
-        
-        if (recs.length === 0) {
-          toast.error('No recommendations available. Please try generating again.', { duration: 5000 });
+        console.log('📋 Received recommendations:', recs.length);
+        if (recs.length > 0) {
+          console.log('🏨 Sample recommendation:', {
+            hasHotel: !!recs[0].hotel,
+            hasHotelId: !!recs[0].hotelId,
+            hotelName: recs[0].hotel?.name || recs[0].hotelId?.name || 'N/A',
+            hotelStructure: Object.keys(recs[0].hotel || {})
+          });
         }
+        setRecommendations(recs);
+        // Empty results are handled by the UI showing "No recommendations found"
       } else {
+        const errorMessage = response.message || 'Failed to load recommendations';
         console.error('Failed to fetch recommendations:', response);
-        toast.error('Failed to load recommendations');
+        // Only show error if it's an actual error, not just empty results
+        if (response.message && !response.message.toLowerCase().includes('not found') && !response.message.toLowerCase().includes('no recommendations')) {
+          toast.error(errorMessage, { duration: 4000 });
+        }
       }
     } catch (error) {
       console.error('Error fetching recommendations:', error);
-      toast.error('Failed to load recommendations');
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to load recommendations';
+      toast.error(errorMessage, { duration: 4000 });
     } finally {
       setLoading(false);
       fetchingRef.current = false;
@@ -139,6 +142,32 @@ const HotelRecommendations = ({ preference, onClose, onSelectHotel }) => {
     }).format(amount);
   };
 
+  const handleExportPDF = async () => {
+    if (!preference) {
+      toast.error('Preference data not available');
+      return;
+    }
+
+    if (filteredRecommendations.length === 0) {
+      toast.error('No recommendations to export');
+      return;
+    }
+
+    try {
+      setExportLoading(true);
+      toast.loading('Generating PDF...', { id: 'export-pdf' });
+      
+      await exportTravelAdvisoryToPDF(preference, filteredRecommendations);
+      
+      toast.success('PDF exported successfully!', { id: 'export-pdf' });
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      toast.error(error.message || 'Failed to export PDF', { id: 'export-pdf' });
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   return (
     <Drawer
       isOpen={true}
@@ -150,34 +179,48 @@ const HotelRecommendations = ({ preference, onClose, onSelectHotel }) => {
       <div className="flex flex-col h-full">
         {/* Filters and Sort */}
         <div className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-border">
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col md:flex-row gap-4 items-end">
             <div className="flex-1">
               <label className="block text-xs text-muted-foreground mb-1">Sort By</label>
-              <select
+              <Dropdown
+                name="sortBy"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-              >
-                <option value="relevance">Relevance Score</option>
-                <option value="price">Price (Low to High)</option>
-                <option value="distance">Distance</option>
-              </select>
+                options={[
+                  { value: 'relevance', label: 'Relevance Score' },
+                  { value: 'price', label: 'Price (Low to High)' },
+                  { value: 'distance', label: 'Distance' }
+                ]}
+                placeholder="Sort By"
+              />
             </div>
             {preference.conferenceLocation && (
               <div className="flex-1">
                 <label className="block text-xs text-muted-foreground mb-1">Distance from Conference</label>
-                <select
+                <Dropdown
+                  name="filterDistance"
                   value={filterDistance}
                   onChange={(e) => setFilterDistance(e.target.value)}
-                  className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                >
-                  <option value="all">All Distances</option>
-                  <option value="within5km">Within 5 km</option>
-                  <option value="within10km">Within 10 km</option>
-                  <option value="within20km">Within 20 km</option>
-                </select>
+                  options={[
+                    { value: 'all', label: 'All Distances' },
+                    { value: 'within5km', label: 'Within 5 km' },
+                    { value: 'within10km', label: 'Within 10 km' },
+                    { value: 'within20km', label: 'Within 20 km' }
+                  ]}
+                  placeholder="Filter by Distance"
+                />
               </div>
             )}
+            <div className="flex-shrink-0">
+              <button
+                onClick={handleExportPDF}
+                disabled={exportLoading || filteredRecommendations.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download size={16} />
+                {exportLoading ? 'Exporting...' : 'Export PDF'}
+              </button>
+            </div>
           </div>
         </div>
 

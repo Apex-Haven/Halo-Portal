@@ -227,7 +227,7 @@ CMD ["npm", "run", "preview"]
 
 ### Static Hosting
 The built files can be deployed to any static hosting service:
-- **Vercel** - Recommended for easy deployment
+- **Netlify** - Recommended for easy deployment (free tier available)
 - **Netlify** - Great for static sites
 - **AWS S3** - Scalable static hosting
 - **GitHub Pages** - Free hosting option

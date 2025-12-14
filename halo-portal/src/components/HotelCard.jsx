@@ -19,11 +19,21 @@ const HotelCard = ({ hotel, recommendation, onSelect }) => {
                hotel?.card?.name ||
                'Hotel Name';
   
-  const image = card?.image || 
-                hotel?.images?.[0]?.url || 
-                hotel?.image || 
-                recommendation?.hotel?.images?.[0]?.url || 
-                recommendation?.hotel?.image || 
+  // Extract image URL - handle both string URLs and image objects { url: "...", source: "..." }
+  const getImageUrl = (img) => {
+    if (!img) return null;
+    if (typeof img === 'string') return img;
+    if (typeof img === 'object' && img.url) return img.url;
+    return null;
+  };
+  
+  const image = getImageUrl(card?.image) || 
+                getImageUrl(hotel?.images?.[0]) || 
+                getImageUrl(hotel?.image) || 
+                getImageUrl(recommendation?.hotel?.images?.[0]) || 
+                getImageUrl(recommendation?.hotel?.image) || 
+                getImageUrl(recommendation?.hotelData?.images?.[0]) ||
+                getImageUrl(recommendation?.hotelData?.image) ||
                 '/images/hotel-placeholder.jpg';
   
   const address = card?.address || 
@@ -119,7 +129,14 @@ const HotelCard = ({ hotel, recommendation, onSelect }) => {
           onError={(e) => {
             // Only update if not already placeholder to prevent infinite loops
             if (e.target.src !== '/images/hotel-placeholder.jpg' && !e.target.src.includes('placeholder')) {
+              console.warn(`Image failed to load: ${e.target.src}, using placeholder`);
               e.target.src = '/images/hotel-placeholder.jpg';
+            }
+          }}
+          onLoad={() => {
+            // Log successful image loads from TripAdvisor CDN for debugging
+            if (image && image.includes('tripadvisor.com')) {
+              console.log(`✅ TripAdvisor image loaded successfully: ${image.substring(0, 80)}...`);
             }
           }}
           loading="lazy"

@@ -2,12 +2,15 @@ import { useState, useEffect } from 'react';
 import { 
   MapPin, Calendar, DollarSign, Star, Filter, Search, Plus, 
   Eye, Sparkles, CheckCircle, Clock, XCircle, AlertCircle,
-  Building2, Users, TrendingUp, Map
+  Building2, Users, TrendingUp, Map, Download, Edit, Trash2
 } from 'lucide-react';
 import travelAdvisoryService from '../services/travelAdvisoryService';
+import { exportTravelAdvisoryToPDF } from '../utils/pdfExport';
 import toast from 'react-hot-toast';
 import ClientPreferenceForm from '../components/ClientPreferenceForm';
 import HotelRecommendations from '../components/HotelRecommendations';
+import Dropdown from '../components/Dropdown';
+import ConfirmModal from '../components/ConfirmModal';
 
 const TravelAdvisory = () => {
   const [preferences, setPreferences] = useState([]);
@@ -28,6 +31,9 @@ const TravelAdvisory = () => {
   const [selectedPreference, setSelectedPreference] = useState(null);
   const [showRecommendations, setShowRecommendations] = useState(false);
   const [editingPreference, setEditingPreference] = useState(null);
+  const [exportingPreferenceId, setExportingPreferenceId] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, preferenceId: null });
+  const [generatingPreferenceId, setGeneratingPreferenceId] = useState(null);
 
   useEffect(() => {
     fetchDashboard();
@@ -56,18 +62,47 @@ const TravelAdvisory = () => {
 
   const handleGenerateRecommendations = async (preferenceId) => {
     try {
+      // Validate preference exists
+      const preference = preferences.find(p => p._id === preferenceId);
+      if (!preference) {
+        toast.error('Preference not found', { id: 'generate' });
+        return;
+      }
+
+      // Validate required fields
+      if (!preference.country) {
+        toast.error('Country is required to generate recommendations', { id: 'generate' });
+        return;
+      }
+
+      if (!preference.checkInDate || !preference.checkOutDate) {
+        toast.error('Check-in and check-out dates are required', { id: 'generate' });
+        return;
+      }
+
+      if (!preference.budgetMin || !preference.budgetMax) {
+        toast.error('Budget range is required', { id: 'generate' });
+        return;
+      }
+
+      setGeneratingPreferenceId(preferenceId);
       toast.loading('Generating recommendations...', { id: 'generate' });
       const response = await travelAdvisoryService.generateRecommendations(preferenceId);
       
       if (response.success) {
         const count = response.recommendationsGenerated || response.recommendations?.length || 0;
-        toast.success(`Generated ${count} recommendations`, { id: 'generate' });
+        
+        if (count > 0) {
+          toast.success(`Generated ${count} recommendation${count !== 1 ? 's' : ''}`, { id: 'generate' });
+        } else {
+          toast.warning('No recommendations found matching your criteria. Try adjusting your preferences.', { id: 'generate', duration: 6000 });
+        }
         
         // Refresh dashboard to get updated status
         await fetchDashboard();
         
         // Use preference from response or find it from state
-        const updatedPreference = response.preference || preferences.find(p => p._id === preferenceId);
+        const updatedPreference = response.preference || preference;
         
         // Auto-open recommendations drawer if we have recommendations
         if (count > 0 && updatedPreference) {
@@ -80,13 +115,17 @@ const TravelAdvisory = () => {
           // Don't attach recommendations directly - let the component fetch them
           setSelectedPreference(stablePreference);
           setShowRecommendations(true);
-        } else if (count === 0) {
-          toast.error('No recommendations were generated. Please check your preferences.', { id: 'generate', duration: 5000 });
         }
+      } else {
+        const errorMessage = response.message || 'Failed to generate recommendations';
+        toast.error(errorMessage, { id: 'generate', duration: 5000 });
       }
     } catch (error) {
       console.error('Error generating recommendations:', error);
-      toast.error('Failed to generate recommendations', { id: 'generate' });
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to generate recommendations. Please try again.';
+      toast.error(errorMessage, { id: 'generate', duration: 5000 });
+    } finally {
+      setGeneratingPreferenceId(null);
     }
   };
 
@@ -107,6 +146,66 @@ const TravelAdvisory = () => {
     } catch (error) {
       console.error('Error selecting hotel:', error);
       toast.error('Failed to select hotel', { id: 'select' });
+    }
+  };
+
+  const handleExportPDF = async (preference) => {
+    if (!preference || !preference._id) {
+      toast.error('Preference data not available');
+      return;
+    }
+
+    try {
+      setExportingPreferenceId(preference._id);
+      toast.loading('Loading recommendations for export...', { id: 'export-pdf' });
+
+      // Fetch recommendations for this preference
+      const response = await travelAdvisoryService.getRecommendations(preference._id);
+      
+      if (response.success && response.recommendations && response.recommendations.length > 0) {
+        toast.loading('Generating PDF...', { id: 'export-pdf' });
+        await exportTravelAdvisoryToPDF(preference, response.recommendations);
+        toast.success('PDF exported successfully!', { id: 'export-pdf' });
+      } else {
+        toast.error('No recommendations available to export. Please generate recommendations first.', { id: 'export-pdf', duration: 5000 });
+      }
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      const errorMessage = error.message || 'Failed to export PDF. Please try again.';
+      toast.error(errorMessage, { id: 'export-pdf' });
+    } finally {
+      setExportingPreferenceId(null);
+    }
+  };
+
+  const handleEditPreference = (preference) => {
+    setEditingPreference(preference);
+    setShowForm(true);
+  };
+
+  const handleDeletePreference = (preferenceId) => {
+    setDeleteConfirm({ isOpen: true, preferenceId });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm.preferenceId) return;
+
+    try {
+      toast.loading('Deleting preference...', { id: 'delete' });
+      const response = await travelAdvisoryService.deletePreferences(deleteConfirm.preferenceId);
+      
+      if (response.success) {
+        toast.success('Preference deleted successfully', { id: 'delete' });
+        fetchDashboard();
+      } else {
+        toast.error(response.message || 'Failed to delete preference', { id: 'delete' });
+      }
+    } catch (error) {
+      console.error('Error deleting preference:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to delete preference';
+      toast.error(errorMessage, { id: 'delete' });
+    } finally {
+      setDeleteConfirm({ isOpen: false, preferenceId: null });
     }
   };
 
@@ -232,28 +331,35 @@ const TravelAdvisory = () => {
               className="w-full pl-10 pr-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
-          <select
+          <Dropdown
+            name="statusFilter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="all">All Status</option>
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
-            <option value="recommendations_generated">Recommendations Ready</option>
-            <option value="hotel_selected">Hotel Selected</option>
-            <option value="completed">Completed</option>
-          </select>
-          <select
+            options={[
+              { value: 'all', label: 'All Status' },
+              { value: 'draft', label: 'Draft' },
+              { value: 'active', label: 'Active' },
+              { value: 'recommendations_generated', label: 'Recommendations Ready' },
+              { value: 'hotel_selected', label: 'Hotel Selected' },
+              { value: 'completed', label: 'Completed' }
+            ]}
+            placeholder="All Status"
+            style={{ minWidth: '180px' }}
+          />
+          <Dropdown
+            name="countryFilter"
             value={countryFilter}
             onChange={(e) => setCountryFilter(e.target.value)}
-            className="px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="all">All Countries</option>
-            {[...new Set(preferences.map(p => p.country))].map(country => (
-              <option key={country} value={country}>{country}</option>
-            ))}
-          </select>
+            options={[
+              { value: 'all', label: 'All Countries' },
+              ...[...new Set(preferences.map(p => p.country).filter(Boolean))].map(country => ({
+                value: country,
+                label: country
+              }))
+            ]}
+            placeholder="All Countries"
+            style={{ minWidth: '180px' }}
+          />
         </div>
       </div>
 
@@ -283,24 +389,60 @@ const TravelAdvisory = () => {
                   </div>
                   <p className="text-sm text-muted-foreground">{pref.clientId?.email}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {pref.status === 'draft' || pref.status === 'active' ? (
                     <button
                       onClick={() => handleGenerateRecommendations(pref._id)}
-                      className="px-3 py-1.5 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-1.5"
+                      disabled={generatingPreferenceId === pref._id}
+                      className="px-3 py-1.5 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Sparkles size={14} />
-                      Generate Recommendations
+                      {generatingPreferenceId === pref._id ? 'Generating...' : 'Generate Recommendations'}
                     </button>
-                  ) : pref.status === 'recommendations_generated' ? (
-                    <button
-                      onClick={() => handleViewRecommendations(pref)}
-                      className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-1.5"
-                    >
-                      <Eye size={14} />
-                      View Recommendations
-                    </button>
+                  ) : pref.status === 'recommendations_generated' || pref.status === 'hotel_selected' ? (
+                    <>
+                      <button
+                        onClick={() => handleViewRecommendations(pref)}
+                        className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-1.5"
+                      >
+                        <Eye size={14} />
+                        View Recommendations
+                      </button>
+                      <button
+                        onClick={() => handleGenerateRecommendations(pref._id)}
+                        disabled={generatingPreferenceId === pref._id}
+                        className="px-3 py-1.5 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Regenerate recommendations with latest data"
+                      >
+                        <Sparkles size={14} />
+                        {generatingPreferenceId === pref._id ? 'Generating...' : 'Generate Again'}
+                      </button>
+                      <button
+                        onClick={() => handleExportPDF(pref)}
+                        disabled={exportingPreferenceId === pref._id}
+                        className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Download size={14} />
+                        {exportingPreferenceId === pref._id ? 'Exporting...' : 'Export PDF'}
+                      </button>
+                    </>
                   ) : null}
+                  <button
+                    onClick={() => handleEditPreference(pref)}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5"
+                    title="Edit Preference"
+                  >
+                    <Edit size={14} />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeletePreference(pref._id)}
+                    className="px-3 py-1.5 text-sm bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors flex items-center gap-1.5"
+                    title="Delete Preference"
+                  >
+                    <Trash2 size={14} />
+                    Delete
+                  </button>
                 </div>
               </div>
 
@@ -388,6 +530,18 @@ const TravelAdvisory = () => {
           onSelectHotel={handleSelectHotel}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteConfirm.isOpen}
+        onClose={() => setDeleteConfirm({ isOpen: false, preferenceId: null })}
+        onConfirm={confirmDelete}
+        title="Delete Travel Preference"
+        message="Are you sure you want to delete this travel preference? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+      />
     </div>
   );
 };

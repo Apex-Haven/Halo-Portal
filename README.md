@@ -52,11 +52,15 @@ Halo/
 
 ## 📚 Documentation
 
+### Development
 - [Backend README](./halo-engine/README.md) - Backend setup and API documentation
 - [Frontend README](./halo-portal/README.md) - Frontend setup guide
-- [Deployment Guide](./halo-engine/DEPLOYMENT.md) - Production deployment
 - [Security Guide](./halo-engine/SECURITY.md) - Security best practices
-- [Documentation](./docs/) - Additional guides and documentation
+
+### Deployment
+- [Deployment Guide](./DEPLOYMENT.md) - Complete deployment guide (Netlify frontend + Render/Fly.io backend)
+- [Environment Variables Template](./ENV_VARIABLES_TEMPLATE.md) - Environment variables reference
+- [Flight Tracking Guide](./FLIGHT_TRACKING_GUIDE.md) - Flight tracking feature documentation
 
 ## 🔧 Environment Variables
 

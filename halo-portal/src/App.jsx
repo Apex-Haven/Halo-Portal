@@ -11,7 +11,6 @@ import Vendors from './pages/Vendors'
 import Flights from './pages/Flights'
 import FlightTracking from './components/FlightTracking'
 import CustomerManagement from './components/CustomerManagement'
-import Hotels from './pages/Hotels'
 import Reports from './pages/Reports'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
@@ -28,7 +27,7 @@ const ProtectedApp = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-500 mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading HALO...</p>
@@ -60,11 +59,6 @@ const ProtectedApp = () => {
             <Route path="/vendors" element={
               <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
                 <Vendors />
-              </ProtectedRoute>
-            } />
-            <Route path="/hotels" element={
-              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
-                <Hotels />
               </ProtectedRoute>
             } />
             <Route path="/reports" element={

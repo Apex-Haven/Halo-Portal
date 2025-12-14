@@ -9,8 +9,13 @@ const Layout = ({ children }) => {
 
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 1024)
-      if (window.innerWidth >= 1024) {
+      const mobile = window.innerWidth < 1024
+      setIsMobile(mobile)
+      if (mobile) {
+        // On mobile, close sidebar by default
+        setSidebarOpen(false)
+      } else {
+        // On desktop, open sidebar by default
         setSidebarOpen(true)
       }
     }
@@ -42,6 +47,7 @@ const Layout = ({ children }) => {
           <div
             className="fixed top-16 left-0 right-0 bottom-0 bg-black/50 z-40"
             onClick={() => setSidebarOpen(false)}
+            style={{ pointerEvents: 'auto' }}
           />
         )}
 
@@ -62,8 +68,8 @@ const Layout = ({ children }) => {
         )}
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out">
-          <main className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out relative z-0">
+          <main className="flex-1 overflow-y-auto p-6 relative z-0">
             {children}
           </main>
         </div>

@@ -10,7 +10,6 @@ import {
   Settings,
   BarChart3,
   Search,
-  Building2,
   Shield,
   Car,
   UserCheck,
@@ -48,12 +47,6 @@ const navigationItems = [
     href: '/flights', 
     icon: Plane,
     roles: ['SUPER_ADMIN', 'ADMIN', 'CLIENT', 'TRAVELER']
-  },
-  { 
-    name: 'Hotels', 
-    href: '/hotels', 
-    icon: Building2,
-    roles: ['SUPER_ADMIN', 'ADMIN']
   },
   { 
     name: 'Travel Advisory', 

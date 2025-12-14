@@ -175,6 +175,11 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
         notes: formData.notes || ''
       };
 
+      // Include preferenceId if editing existing preference
+      if (preference && preference._id) {
+        payload.preferenceId = preference._id;
+      }
+
       // Clean up conference location if provided
       if (formData.conferenceLocation && formData.conferenceLocation.name && formData.conferenceLocation.name.trim()) {
         const coords = formData.conferenceLocation.coordinates;
@@ -374,17 +379,18 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Currency</label>
-                <select
+                <Dropdown
                   name="currency"
                   value={formData.currency}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="INR">INR</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="GBP">GBP</option>
-                </select>
+                  options={[
+                    { value: 'INR', label: 'INR' },
+                    { value: 'USD', label: 'USD' },
+                    { value: 'EUR', label: 'EUR' },
+                    { value: 'GBP', label: 'GBP' }
+                  ]}
+                  placeholder="Select Currency"
+                />
               </div>
             </div>
           </div>

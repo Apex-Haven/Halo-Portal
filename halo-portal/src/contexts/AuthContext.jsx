@@ -200,10 +200,20 @@ export const AuthProvider = ({ children }) => {
 
   // Load user on app start
   useEffect(() => {
-    if (state.token) {
+    // Only load user if we have a token but no user data yet
+    // If we already have user data (e.g., from login), skip loading
+    if (state.token && !state.user) {
       loadUser()
-    } else {
+    } else if (!state.token) {
+      // Only set loading to false if we don't have a token
+      // This prevents stuck loading state
       dispatch({ type: AUTH_ACTIONS.LOAD_USER_FAILURE })
+    } else if (state.user && state.loading) {
+      // If we have user but still loading, clear loading state
+      dispatch({ 
+        type: AUTH_ACTIONS.LOAD_USER_SUCCESS,
+        payload: { user: state.user }
+      })
     }
   }, [])
 
@@ -212,7 +222,7 @@ export const AuthProvider = ({ children }) => {
     try {
       dispatch({ type: AUTH_ACTIONS.LOAD_USER_START })
       
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const response = await axios.get(`${API_BASE_URL}/auth/me`)
       
       if (response.data.success) {
@@ -236,8 +246,8 @@ export const AuthProvider = ({ children }) => {
     try {
       dispatch({ type: AUTH_ACTIONS.LOGIN_START })
       
-      // Real API authentication - use proxy in development
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+      // Real API authentication
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const response = await axios.post(`${API_BASE_URL}/auth/login`, {
         email,
         password
@@ -272,7 +282,7 @@ export const AuthProvider = ({ children }) => {
     try {
       dispatch({ type: AUTH_ACTIONS.REGISTER_START })
       
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const response = await axios.post(`${API_BASE_URL}/auth/register`, userData)
       
       if (response.data.success) {
@@ -317,7 +327,7 @@ export const AuthProvider = ({ children }) => {
   // Update profile function
   const updateProfile = async (profileData) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const response = await axios.put(`${API_BASE_URL}/auth/profile`, profileData)
       
       if (response.data.success) {
@@ -338,7 +348,7 @@ export const AuthProvider = ({ children }) => {
   // Change password function
   const changePassword = async (currentPassword, newPassword) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const response = await axios.put(`${API_BASE_URL}/auth/change-password`, {
         currentPassword,
         newPassword
