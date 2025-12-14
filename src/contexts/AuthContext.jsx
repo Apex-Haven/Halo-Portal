@@ -6,6 +6,16 @@ import { useNavigate } from 'react-router-dom'
 // Auth Context
 const AuthContext = createContext()
 
+// Helper to get API base URL with /api suffix
+const getApiBaseUrl = () => {
+  let apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+  // Ensure it ends with /api
+  if (!apiUrl.endsWith('/api')) {
+    apiUrl = apiUrl.endsWith('/') ? `${apiUrl}api` : `${apiUrl}/api`;
+  }
+  return apiUrl;
+}
+
 // Auth Actions
 const AUTH_ACTIONS = {
   LOGIN_START: 'LOGIN_START',
@@ -222,7 +232,7 @@ export const AuthProvider = ({ children }) => {
     try {
       dispatch({ type: AUTH_ACTIONS.LOAD_USER_START })
       
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+      const API_BASE_URL = getApiBaseUrl();
       const response = await axios.get(`${API_BASE_URL}/auth/me`)
       
       if (response.data.success) {
@@ -247,7 +257,7 @@ export const AuthProvider = ({ children }) => {
       dispatch({ type: AUTH_ACTIONS.LOGIN_START })
       
       // Real API authentication
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+      const API_BASE_URL = getApiBaseUrl();
       const response = await axios.post(`${API_BASE_URL}/auth/login`, {
         email,
         password
@@ -282,7 +292,7 @@ export const AuthProvider = ({ children }) => {
     try {
       dispatch({ type: AUTH_ACTIONS.REGISTER_START })
       
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+      const API_BASE_URL = getApiBaseUrl();
       const response = await axios.post(`${API_BASE_URL}/auth/register`, userData)
       
       if (response.data.success) {
@@ -327,7 +337,7 @@ export const AuthProvider = ({ children }) => {
   // Update profile function
   const updateProfile = async (profileData) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+      const API_BASE_URL = getApiBaseUrl();
       const response = await axios.put(`${API_BASE_URL}/auth/profile`, profileData)
       
       if (response.data.success) {
@@ -348,7 +358,7 @@ export const AuthProvider = ({ children }) => {
   // Change password function
   const changePassword = async (currentPassword, newPassword) => {
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+      const API_BASE_URL = getApiBaseUrl();
       const response = await axios.put(`${API_BASE_URL}/auth/change-password`, {
         currentPassword,
         newPassword
