@@ -29,6 +29,7 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
+    name: '',
     clientId: '',
     country: '',
     targetAreas: [],
@@ -59,6 +60,7 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
     if (preference) {
       // Populate form with existing preference data
       setFormData({
+        name: preference.name || '',
         clientId: preference.clientId?._id || preference.clientId || '',
         country: preference.country || '',
         targetAreas: preference.targetAreas || [],
@@ -237,6 +239,26 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
     >
       <form onSubmit={handleSubmit} className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4">
+          {/* Preference Name */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Preference Name <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              className="w-full px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="e.g., Mexico Conference Trip, Summer Vacation 2025"
+              required
+              maxLength={200}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Give this preference a unique name to easily identify it later
+            </p>
+          </div>
+
           {/* Client Selection */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-foreground mb-2">

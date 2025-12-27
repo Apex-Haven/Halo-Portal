@@ -233,9 +233,11 @@ const TravelAdvisory = () => {
   const filteredPreferences = preferences.filter(pref => {
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
+      const name = pref.name || '';
       const clientName = pref.clientId?.profile?.firstName || pref.clientId?.username || '';
       const country = pref.country || '';
-      return clientName.toLowerCase().includes(searchLower) || 
+      return name.toLowerCase().includes(searchLower) ||
+             clientName.toLowerCase().includes(searchLower) || 
              country.toLowerCase().includes(searchLower);
     }
     return true;
@@ -382,12 +384,15 @@ const TravelAdvisory = () => {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="text-lg font-semibold text-foreground">
-                      {pref.clientId?.profile?.firstName} {pref.clientId?.profile?.lastName} 
-                      {!pref.clientId?.profile?.firstName && pref.clientId?.username}
+                      {pref.name || `${pref.clientId?.profile?.firstName || pref.clientId?.username}'s Preference`}
                     </h3>
                     {getStatusBadge(pref.status)}
                   </div>
-                  <p className="text-sm text-muted-foreground">{pref.clientId?.email}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {pref.clientId?.profile?.firstName} {pref.clientId?.profile?.lastName} 
+                    {!pref.clientId?.profile?.firstName && pref.clientId?.username}
+                    {pref.clientId?.email && ` • ${pref.clientId.email}`}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {pref.status === 'draft' || pref.status === 'active' ? (
