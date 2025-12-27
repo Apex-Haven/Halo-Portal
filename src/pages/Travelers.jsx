@@ -6,7 +6,7 @@ import { useApi } from '../hooks/useApi'
 import Drawer from '../components/Drawer'
 
 const Travelers = () => {
-  const { user: currentUser } = useAuth()
+  const { user: currentUser, isRole } = useAuth()
   const api = useApi()
   const [travelers, setTravelers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -23,7 +23,7 @@ const Travelers = () => {
   })
 
   useEffect(() => {
-    if (currentUser && currentUser.role === 'CLIENT') {
+    if (currentUser && isRole('CLIENT', 'SUPER_ADMIN', 'ADMIN')) {
       fetchTravelers()
     }
   }, [currentUser])
@@ -143,7 +143,7 @@ const Travelers = () => {
     `${traveler.profile?.firstName} ${traveler.profile?.lastName}`.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  if (!currentUser || currentUser.role !== 'CLIENT') {
+  if (!currentUser || !isRole('CLIENT', 'SUPER_ADMIN', 'ADMIN')) {
     return (
       <div className="p-8 text-center">
         <div className="text-lg font-semibold text-foreground mb-2">Access Denied</div>
