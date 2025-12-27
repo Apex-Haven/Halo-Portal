@@ -250,14 +250,15 @@ const HotelRecommendations = ({ preference, onClose, onSelectHotel }) => {
                       onSelect={() => handleSelectHotel(rec.hotelId?._id || rec.hotelId || rec.hotel?.hotelId)}
                     />
                     {/* Additional match details overlay */}
-                    {(rec.distanceFromConference !== null || rec.distanceFromTargetArea !== null) && (
+                    {((rec.distanceFromConference != null && typeof rec.distanceFromConference === 'number') || 
+                      (rec.distanceFromTargetArea != null && typeof rec.distanceFromTargetArea === 'number')) && (
                       <div className="mt-2 p-2 bg-muted/50 rounded text-xs">
-                        {rec.distanceFromConference !== null && (
+                        {rec.distanceFromConference != null && typeof rec.distanceFromConference === 'number' && (
                           <div className="text-muted-foreground">
                             Conference: {rec.distanceFromConference.toFixed(1)} km
                           </div>
                         )}
-                        {rec.distanceFromTargetArea !== null && (
+                        {rec.distanceFromTargetArea != null && typeof rec.distanceFromTargetArea === 'number' && (
                           <div className="text-muted-foreground">
                             Target Area: {rec.distanceFromTargetArea.toFixed(1)} km
                           </div>
