@@ -77,6 +77,22 @@ const HotelCard = ({ hotel, recommendation, onSelect }) => {
   
   const relevanceScore = recommendation?.relevanceScore || 0;
 
+  // Format currency properly
+  const formatCurrency = (amount, curr = currency) => {
+    if (!amount) return 'N/A';
+    try {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: curr,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount);
+    } catch (error) {
+      // Fallback if currency code is invalid
+      return `${curr} ${amount.toFixed(0)}`;
+    }
+  };
+
   // Format platform names
   const formatPlatformName = (platform) => {
     const names = {
@@ -175,7 +191,7 @@ const HotelCard = ({ hotel, recommendation, onSelect }) => {
         {/* Price */}
         <div className="flex items-baseline gap-2 mb-3">
           <span className="text-2xl font-bold text-foreground">
-            {currency} {price.toFixed(2)}
+            {formatCurrency(price, currency)}
           </span>
           <span className="text-sm text-muted-foreground">per night</span>
         </div>
@@ -193,7 +209,7 @@ const HotelCard = ({ hotel, recommendation, onSelect }) => {
                   <div key={platform} className="flex justify-between items-center">
                     <span className="text-muted-foreground">{formatPlatformName(platform)}:</span>
                     <span className={`font-medium ${isBest ? 'text-green-600 dark:text-green-400' : 'text-foreground'}`}>
-                      {priceCurrency} {amount.toFixed(2)}
+                      {formatCurrency(amount, priceCurrency)}
                       {isBest && <CheckCircle size={12} className="inline ml-1" />}
                     </span>
                   </div>
