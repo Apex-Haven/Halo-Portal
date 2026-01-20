@@ -54,10 +54,14 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
     notes: ''
   });
   const [newArea, setNewArea] = useState('');
+  const [hasConferenceLocation, setHasConferenceLocation] = useState(false);
 
   useEffect(() => {
     fetchClients();
     if (preference) {
+      // Check if preference has conference location data
+      const hasConference = !!(preference.conferenceLocation && preference.conferenceLocation.name);
+      
       // Populate form with existing preference data
       setFormData({
         name: preference.name || '',
@@ -81,6 +85,8 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
         transferId: preference.transferId || '',
         notes: preference.notes || ''
       });
+      
+      setHasConferenceLocation(hasConference);
     }
   }, [preference]);
 
@@ -143,6 +149,11 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    if (!formData.name || !formData.name.trim()) {
+      toast.error('Please enter a preference name');
+      return;
+    }
+
     if (!formData.clientId || !formData.country || !formData.checkInDate || !formData.checkOutDate) {
       toast.error('Please fill in all required fields');
       return;
@@ -161,6 +172,7 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
       const checkOutDate = formData.checkOutDate ? new Date(formData.checkOutDate).toISOString() : null;
       
       const payload = {
+        name: formData.name.trim(),
         clientId: formData.clientId,
         country: formData.country.trim(),
         targetAreas: formData.targetAreas.filter(area => area && area.trim()),
@@ -182,8 +194,8 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
         payload.preferenceId = preference._id;
       }
 
-      // Clean up conference location if provided
-      if (formData.conferenceLocation && formData.conferenceLocation.name && formData.conferenceLocation.name.trim()) {
+      // Handle conference location based on checkbox
+      if (hasConferenceLocation && formData.conferenceLocation && formData.conferenceLocation.name && formData.conferenceLocation.name.trim()) {
         const coords = formData.conferenceLocation.coordinates;
         const hasValidCoordinates = coords && 
           coords.latitude != null && 
@@ -479,50 +491,71 @@ const ClientPreferenceForm = ({ preference, onClose, onSave }) => {
             </div>
           </div>
 
+          {/* Conference Location Toggle */}
+          <div className="mb-6">
+            <label className="flex items-center gap-3 p-4 rounded-lg border border-border hover:bg-accent cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={hasConferenceLocation}
+                onChange={(e) => setHasConferenceLocation(e.target.checked)}
+                className="w-4 h-4 rounded border-border text-primary focus:ring-2 focus:ring-primary cursor-pointer"
+              />
+              <div className="flex items-center gap-2">
+                <Building2 size={20} className="text-foreground" />
+                <span className="text-sm font-medium text-foreground">Has Conference/Event Location</span>
+              </div>
+            </label>
+            <p className="mt-2 text-xs text-muted-foreground ml-7">
+              Check this if you want to filter hotels by proximity to a conference or event location
+            </p>
+          </div>
+
           {/* Conference Location */}
-          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-            <div className="flex items-center gap-2 mb-4">
-              <Building2 size={20} className="text-blue-600 dark:text-blue-400" />
-              <label className="text-sm font-medium text-foreground">Conference/Event Location (Optional)</label>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Conference Name</label>
-                <input
-                  type="text"
-                  value={formData.conferenceLocation.name}
-                  onChange={(e) => handleConferenceChange('name', e.target.value)}
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="e.g., Tech Conference 2024"
-                />
+          {hasConferenceLocation && (
+            <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center gap-2 mb-4">
+                <Building2 size={20} className="text-blue-600 dark:text-blue-400" />
+                <label className="text-sm font-medium text-foreground">Conference/Event Location</label>
               </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Address</label>
-                <input
-                  type="text"
-                  value={formData.conferenceLocation.address}
-                  onChange={(e) => handleConferenceChange('address', e.target.value)}
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Full address of the conference venue"
-                />
-              </div>
-              {formData.conferenceLocation.name && (
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1">
-                    Max Distance from Conference (km)
-                  </label>
+                  <label className="block text-xs text-muted-foreground mb-1">Conference Name</label>
                   <input
-                    type="number"
-                    value={formData.maxDistanceFromConference}
-                    onChange={(e) => setFormData(prev => ({ ...prev, maxDistanceFromConference: parseFloat(e.target.value) || 10 }))}
+                    type="text"
+                    value={formData.conferenceLocation.name}
+                    onChange={(e) => handleConferenceChange('name', e.target.value)}
                     className="w-full px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    min="1"
-                    max="100"
+                    placeholder="e.g., Tech Conference 2024"
                   />
                 </div>
-              )}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Address</label>
+                  <input
+                    type="text"
+                    value={formData.conferenceLocation.address}
+                    onChange={(e) => handleConferenceChange('address', e.target.value)}
+                    className="w-full px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="Full address of the conference venue"
+                  />
+                </div>
+                {formData.conferenceLocation.name && (
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">
+                      Max Distance from Conference (km)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.maxDistanceFromConference}
+                      onChange={(e) => setFormData(prev => ({ ...prev, maxDistanceFromConference: parseFloat(e.target.value) || 10 }))}
+                      className="w-full px-4 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      min="1"
+                      max="100"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Special Requirements */}
           <div className="mb-6">

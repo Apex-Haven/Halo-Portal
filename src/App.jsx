@@ -18,6 +18,7 @@ import UserManagement from './pages/UserManagement'
 import Travelers from './pages/Travelers'
 import Drivers from './pages/Drivers'
 import TravelAdvisory from './pages/TravelAdvisory'
+import HotelPdfBuilder from './pages/HotelPdfBuilder'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -98,6 +99,11 @@ const ProtectedApp = () => {
             <Route path="/travel-advisory" element={
               <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER']} redirectTo="/transfers">
                 <TravelAdvisory />
+              </ProtectedRoute>
+            } />
+            <Route path="/hotel-pdf-builder" element={
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
+                <HotelPdfBuilder />
               </ProtectedRoute>
             } />
             

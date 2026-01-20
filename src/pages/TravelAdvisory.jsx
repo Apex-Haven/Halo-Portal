@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { 
-  MapPin, Calendar, DollarSign, Star, Filter, Search, Plus, 
+  MapPin, Calendar, Star, Filter, Search, Plus, 
   Eye, Sparkles, CheckCircle, Clock, XCircle, AlertCircle,
   Building2, Users, TrendingUp, Map, Download, Edit, Trash2
 } from 'lucide-react';
@@ -95,7 +95,15 @@ const TravelAdvisory = () => {
         if (count > 0) {
           toast.success(`Generated ${count} recommendation${count !== 1 ? 's' : ''}`, { id: 'generate' });
         } else {
-          toast.warning('No recommendations found matching your criteria. Try adjusting your preferences.', { id: 'generate', duration: 6000 });
+          toast('No recommendations found matching your criteria. Try adjusting your preferences.', { 
+            id: 'generate', 
+            duration: 6000,
+            icon: '⚠️',
+            style: {
+              background: '#fbbf24',
+              color: '#78350f',
+            }
+          });
         }
         
         // Refresh dashboard to get updated status
@@ -466,7 +474,6 @@ const TravelAdvisory = () => {
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <DollarSign size={16} className="text-muted-foreground" />
                   <span className="text-foreground">
                     {formatCurrency(pref.budgetMin, pref.currency)} - {formatCurrency(pref.budgetMax, pref.currency)}
                   </span>
