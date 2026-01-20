@@ -13,7 +13,8 @@ import {
   Shield,
   Car,
   UserCheck,
-  MapPin
+  MapPin,
+  FileText
 } from 'lucide-react'
 
 // Define all navigation items in a flat list
@@ -53,6 +54,12 @@ const navigationItems = [
     href: '/travel-advisory', 
     icon: MapPin,
     roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER']
+  },
+  { 
+    name: 'Hotel PDF Builder', 
+    href: '/hotel-pdf-builder', 
+    icon: FileText,
+    roles: ['SUPER_ADMIN', 'ADMIN']
   },
   { 
     name: 'Vendors', 
