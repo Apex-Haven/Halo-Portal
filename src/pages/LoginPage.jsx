@@ -31,10 +31,32 @@ const LoginPage = () => {
         if (result.success) {
           toast.success('Login successful!')
         } else {
-          toast.error(result.error)
+          toast.error(result.error || 'Login failed')
       }
     } catch (err) {
-      toast.error('An error occurred')
+      // Extract better error message
+      let errorMessage = 'Login failed'
+      
+      if (err.response?.data) {
+        if (err.response.data.message) {
+          errorMessage = err.response.data.message
+        } else if (err.response.data.error) {
+          errorMessage = err.response.data.error
+        }
+        
+        // Handle rate limiting with retryAfter info
+        if (err.response.status === 429) {
+          const retryAfter = err.response.data.retryAfter
+          if (retryAfter) {
+            const minutes = Math.ceil(retryAfter / 60)
+            errorMessage = `${err.response.data.message || 'Too many login attempts'}. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`
+          }
+        }
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }

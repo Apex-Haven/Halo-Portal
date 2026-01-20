@@ -32,7 +32,30 @@ api.interceptors.response.use(
     return response.data
   },
   (error) => {
-    const message = error.response?.data?.message || error.message || 'An error occurred'
+    // Extract better error messages
+    let message = 'An error occurred'
+    
+    if (error.response?.data) {
+      // Check for specific error message
+      if (error.response.data.message) {
+        message = error.response.data.message
+      } else if (error.response.data.error) {
+        message = error.response.data.error
+      } else if (typeof error.response.data === 'string') {
+        message = error.response.data
+      }
+      
+      // Handle rate limiting with retryAfter info
+      if (error.response.status === 429) {
+        const retryAfter = error.response.data.retryAfter
+        if (retryAfter) {
+          const minutes = Math.ceil(retryAfter / 60)
+          message = `${error.response.data.message || 'Too many requests'}. Please try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.`
+        }
+      }
+    } else if (error.message) {
+      message = error.message
+    }
     
     // Show error toast
     toast.error(message)
