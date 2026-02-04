@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import AIInsightsCard from '../components/AIInsightsCard'
 import { useNavigate } from 'react-router-dom'
+import { getTransferDisplayName } from '../utils/transferUtils'
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null)
@@ -231,7 +232,7 @@ const Dashboard = () => {
           
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             <div 
-              onClick={() => navigate('/flight-tracking')}
+              onClick={() => navigate('/flights')}
               className="p-4 border border-border rounded-lg cursor-pointer transition-all bg-muted/30 hover:bg-muted/50"
             >
               <div className="flex items-center gap-2 mb-2">
@@ -244,7 +245,7 @@ const Dashboard = () => {
             </div>
 
             <div 
-              onClick={() => navigate('/flight-tracking')}
+              onClick={() => navigate('/flights')}
               className="p-4 border border-border rounded-lg cursor-pointer transition-all bg-muted/30 hover:bg-muted/50"
             >
               <div className="flex items-center gap-2 mb-2">
@@ -347,7 +348,7 @@ const Dashboard = () => {
                 >
                   <div className="flex justify-between items-center mb-3">
                     <span className="font-semibold text-foreground text-sm">
-                    {transfer._id}
+                    {getTransferDisplayName(transfer)}
                   </span>
                     <span 
                       onClick={(e) => {

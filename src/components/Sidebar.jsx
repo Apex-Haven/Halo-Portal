@@ -5,16 +5,13 @@ import {
   LayoutDashboard,
   Truck,
   Navigation,
-  Users,
   Plane,
   Settings,
   BarChart3,
-  Search,
   Shield,
   Car,
   UserCheck,
-  MapPin,
-  FileText
+  MapPin
 } from 'lucide-react'
 
 // Define all navigation items in a flat list
@@ -32,12 +29,6 @@ const navigationItems = [
     roles: ['SUPER_ADMIN', 'ADMIN', 'VENDOR', 'CLIENT', 'DRIVER', 'TRAVELER']
   },
   {
-    name: 'Flight Tracking',
-    href: '/flight-tracking',
-    icon: Search,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'VENDOR', 'CLIENT', 'DRIVER', 'TRAVELER']
-  },
-  {
     name: 'Track Transfer',
     href: '/tracking',
     icon: Navigation,
@@ -50,22 +41,10 @@ const navigationItems = [
     roles: ['SUPER_ADMIN', 'ADMIN', 'CLIENT', 'TRAVELER']
   },
   { 
-    name: 'Travel Advisory', 
+    name: 'Hotels & Advisory', 
     href: '/travel-advisory', 
     icon: MapPin,
     roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER']
-  },
-  { 
-    name: 'Hotel PDF Builder', 
-    href: '/hotel-pdf-builder', 
-    icon: FileText,
-    roles: ['SUPER_ADMIN', 'ADMIN']
-  },
-  { 
-    name: 'Vendors', 
-    href: '/vendors', 
-    icon: Users,
-    roles: ['SUPER_ADMIN', 'ADMIN']
   },
   { 
     name: 'User Management', 

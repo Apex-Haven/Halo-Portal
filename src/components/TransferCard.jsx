@@ -13,6 +13,7 @@ import {
   XCircle,
   Loader
 } from 'lucide-react'
+import { getTransferDisplayName } from '../utils/transferUtils'
 
 const statusConfig = {
   pending: {
@@ -113,10 +114,10 @@ const TransferCard = ({ transfer, onClick }) => {
         <div className="flex items-start justify-between mb-4">
           <div>
             <h3 className="text-lg font-semibold text-gray-900">
-              {transfer._id}
+              {getTransferDisplayName(transfer)}
             </h3>
             <p className="text-sm text-gray-600">
-              {transfer.customer_details?.name}
+              {transfer._id}
             </p>
           </div>
           <div className="flex items-center space-x-2">

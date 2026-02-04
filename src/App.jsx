@@ -7,9 +7,7 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Transfers from './pages/Transfers'
 import Tracking from './pages/Tracking'
-import Vendors from './pages/Vendors'
 import Flights from './pages/Flights'
-import FlightTracking from './components/FlightTracking'
 import CustomerManagement from './components/CustomerManagement'
 import Reports from './pages/Reports'
 import Profile from './pages/Profile'
@@ -18,7 +16,6 @@ import UserManagement from './pages/UserManagement'
 import Travelers from './pages/Travelers'
 import Drivers from './pages/Drivers'
 import TravelAdvisory from './pages/TravelAdvisory'
-import HotelPdfBuilder from './pages/HotelPdfBuilder'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 
@@ -55,11 +52,6 @@ const ProtectedApp = () => {
             <Route path="/" element={
               <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
                 <Dashboard />
-              </ProtectedRoute>
-            } />
-            <Route path="/vendors" element={
-              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
-                <Vendors />
               </ProtectedRoute>
             } />
             <Route path="/reports" element={
@@ -101,15 +93,9 @@ const ProtectedApp = () => {
                 <TravelAdvisory />
               </ProtectedRoute>
             } />
-            <Route path="/hotel-pdf-builder" element={
-              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
-                <HotelPdfBuilder />
-              </ProtectedRoute>
-            } />
             
             {/* Common routes (accessible by multiple roles) */}
             <Route path="/transfers" element={<Transfers />} />
-            <Route path="/flight-tracking" element={<FlightTracking />} />
             <Route path="/customers" element={<CustomerManagement />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="*" element={<NotFound />} />

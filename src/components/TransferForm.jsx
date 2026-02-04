@@ -549,20 +549,25 @@ const TransferForm = ({ onClose, onSuccess }) => {
           </motion.div>
           <h3 className="text-2xl font-bold text-foreground mb-4">Transfer Created!</h3>
           <p className="text-muted-foreground mb-8 text-center max-w-md">
-            Your transfer has been successfully created. Use the APEX ID below to track your transfer.
+            Your transfer has been successfully created. Use the reference below to track your transfer.
           </p>
           <div className="bg-card border-2 border-primary rounded-lg p-6 mb-6 w-full max-w-md">
-            <div className="text-sm text-muted-foreground mb-2">Your APEX ID:</div>
-            <div className="flex items-center justify-center gap-3">
-              <div className="text-3xl font-mono font-bold text-primary text-center">
+            <div className="text-sm text-muted-foreground mb-2">Transfer Reference:</div>
+            <div className="flex flex-col items-center justify-center gap-2 mb-3">
+              <div className="text-2xl font-bold text-primary text-center">
+                {formData.customerName || 'Transfer'}
+              </div>
+              <div className="text-sm font-mono text-muted-foreground">
                 {createdTransferId}
               </div>
+            </div>
+            <div className="flex items-center justify-center gap-3">
               <motion.button
                 type="button"
                 onClick={() => {
                   navigator.clipboard.writeText(createdTransferId);
                   setCopied(true);
-                  toast.success('APEX ID copied to clipboard!');
+                  toast.success('Transfer ID copied to clipboard!');
                   setTimeout(() => setCopied(false), 2000);
                 }}
                 whileHover={{ scale: 1.1 }}

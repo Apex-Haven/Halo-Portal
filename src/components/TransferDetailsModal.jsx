@@ -6,6 +6,7 @@ import { useApi } from '../hooks/useApi';
 import Drawer from './Drawer';
 import VendorDriverAssignment from './VendorDriverAssignment';
 import toast from 'react-hot-toast';
+import { getTransferDisplayName } from '../utils/transferUtils';
 
 const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
   const { isDark } = useTheme();
@@ -77,7 +78,7 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
       isOpen={true}
       onClose={onClose}
       title="Transfer Details"
-      subtitle={transfer._id}
+      subtitle={`${getTransferDisplayName(transfer)}${transfer._id && getTransferDisplayName(transfer) !== transfer._id ? ` (${transfer._id})` : ''}`}
       position="right"
       size="lg"
     >

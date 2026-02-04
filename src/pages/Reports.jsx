@@ -7,6 +7,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useTheme } from '../contexts/ThemeContext'
 import { useNavigate } from 'react-router-dom'
+import { getTransferDisplayName } from '../utils/transferUtils'
 
 const Reports = () => {
   const { user, isRole } = useAuth()
@@ -223,7 +224,7 @@ const Reports = () => {
 
       // Table data
       const tableData = transfers.map(transfer => [
-        (transfer._id || '').substring(0, 12) + '...',
+        getTransferDisplayName(transfer),
         transfer.customer_details?.name || 'N/A',
         transfer.customer_details?.email || 'N/A',
         transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A',
@@ -404,7 +405,7 @@ const Reports = () => {
         yPosition += 8
 
         const transferData = customerTransfers.slice(0, 20).map(transfer => [
-          (transfer._id || '').substring(0, 12) + '...',
+          getTransferDisplayName(transfer),
           transfer.flight_details?.flight_no || 'N/A',
           transfer.vendor_details?.vendor_name || 'N/A',
           (transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'Pending').replace('_', ' '),
@@ -468,7 +469,7 @@ const Reports = () => {
       // Add transfer details
       const transferRows = customerTransfers.map((transfer, index) => [
         `Transfer ${index + 1}`,
-        `ID: ${transfer._id || ''}, Flight: ${transfer.flight_details?.flight_no || 'N/A'}, Status: ${transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'Pending'}`
+        `${getTransferDisplayName(transfer)} (${transfer._id || ''}), Flight: ${transfer.flight_details?.flight_no || 'N/A'}, Status: ${transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'Pending'}`
       ])
 
       const csvContent = [
@@ -510,8 +511,9 @@ const Reports = () => {
       // Header
       doc.setFontSize(20)
       doc.setTextColor(37, 99, 235)
-      const transferId = (transfer._id || '').substring(0, 12) || 'Transfer'
-      doc.text(`Transfer Report - ${transferId}`, 14, yPosition)
+      const transferDisplayName = getTransferDisplayName(transfer)
+      const transferId = transfer._id || ''
+      doc.text(`Transfer Report - ${transferDisplayName}${transferId && transferDisplayName !== transferId ? ` (${transferId})` : ''}`, 14, yPosition)
       
       yPosition += 10
       doc.setFontSize(12)
@@ -658,7 +660,7 @@ const Reports = () => {
     try {
       const headers = ['Field', 'Value']
       const transferData = [
-        ['Transfer ID', transfer._id || ''],
+        ['Transfer Reference', `${getTransferDisplayName(transfer)}${transfer._id && getTransferDisplayName(transfer) !== transfer._id ? ` (${transfer._id})` : ''}`],
         ['Customer Name', transfer.customer_details?.name || ''],
         ['Customer Email', transfer.customer_details?.email || ''],
         ['Customer Phone', transfer.customer_details?.phone || ''],
@@ -1420,9 +1422,12 @@ const Reports = () => {
                 >
                   <span className="truncate">
                     {selectedTransfer 
-                      ? transfers.find(t => t._id === selectedTransfer || t.id === selectedTransfer) 
-                        ? `${transfers.find(t => t._id === selectedTransfer || t.id === selectedTransfer).customer_details?.name || 'Transfer'} - ${transfers.find(t => t._id === selectedTransfer || t.id === selectedTransfer).flight_details?.flight_no || transfers.find(t => t._id === selectedTransfer || t.id === selectedTransfer).flight_details?.flight_number || 'N/A'}`
-                        : 'Select transfer...'
+                      ? (() => {
+                          const transfer = transfers.find(t => t._id === selectedTransfer || t.id === selectedTransfer);
+                          return transfer 
+                            ? `${getTransferDisplayName(transfer)} - ${transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A'}`
+                            : 'Select transfer...';
+                        })()
                       : 'Select transfer...'}
                   </span>
                   <ChevronDown size={16} className={`transition-transform ${showTransferDropdown ? 'rotate-180' : ''}`} />
@@ -1459,7 +1464,7 @@ const Reports = () => {
                           return customerName.includes(searchLower) || customerEmail.includes(searchLower) || flightNo.includes(searchLower) || vendorName.includes(searchLower) || transferId.includes(searchLower)
                         })
                         .map(transfer => {
-                          const transferLabel = `${transfer.customer_details?.name || 'Transfer'} - ${transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A'}`
+                          const transferLabel = `${getTransferDisplayName(transfer)} - ${transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A'}`
                           return (
                             <div
                               key={transfer._id || transfer.id}

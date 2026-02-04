@@ -92,16 +92,16 @@ const AIInsightsCard = () => {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-success-50 dark:bg-success-950 rounded-full border border-success-200 dark:border-success-800">
-          <Zap size={14} className="text-success-600 dark:text-success-500" />
-          <span className="text-xs text-success-600 dark:text-success-500 font-medium">Live</span>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-success-50 dark:bg-success-900/30 rounded-full border border-success-200 dark:border-success-700/50">
+          <Zap size={14} className="text-success-600 dark:text-success-400" />
+          <span className="text-xs text-success-600 dark:text-success-400 font-medium">Live</span>
         </div>
       </div>
 
       {/* Main Stats */}
       <div className="grid grid-cols-2 gap-4 mb-5">
         {/* Next 6 Hours */}
-        <div className="p-4 bg-muted/30 rounded-lg border border-border">
+        <div className="p-4 bg-muted/30 dark:bg-muted/20 rounded-lg border border-border">
           <div className="flex items-center gap-2 mb-2">
             <Clock size={16} className="text-muted-foreground" />
             <span className="text-xs text-muted-foreground font-medium">
@@ -114,7 +114,7 @@ const AIInsightsCard = () => {
           <div className="text-xs text-muted-foreground mb-2">
             {overview?.highRiskNext6h || 0} high risk
           </div>
-          <div className="mt-2 h-1 bg-muted rounded-full overflow-hidden">
+          <div className="mt-2 h-1 bg-muted dark:bg-muted/50 rounded-full overflow-hidden">
             <div 
               className={`h-full ${getDelayColor(overview?.avgDelayProbability6h || 0)} transition-all duration-300`}
               style={{ width: `${overview?.avgDelayProbability6h || 0}%` }}
@@ -123,7 +123,7 @@ const AIInsightsCard = () => {
         </div>
 
         {/* Next 24 Hours */}
-        <div className="p-4 bg-muted/30 rounded-lg border border-border">
+        <div className="p-4 bg-muted/30 dark:bg-muted/20 rounded-lg border border-border">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp size={16} className="text-muted-foreground" />
             <span className="text-xs text-muted-foreground font-medium">
@@ -136,7 +136,7 @@ const AIInsightsCard = () => {
           <div className="text-xs text-muted-foreground mb-2">
             {overview?.highRiskNext24h || 0} high risk
           </div>
-          <div className="mt-2 h-1 bg-muted rounded-full overflow-hidden">
+          <div className="mt-2 h-1 bg-muted dark:bg-muted/50 rounded-full overflow-hidden">
             <div 
               className={`h-full ${getDelayColor(overview?.avgDelayProbability24h || 0)} transition-all duration-300`}
               style={{ width: `${overview?.avgDelayProbability24h || 0}%` }}
@@ -146,36 +146,36 @@ const AIInsightsCard = () => {
       </div>
 
       {/* Risk Breakdown */}
-      <div className="p-4 bg-warning-50 dark:bg-warning-950 rounded-lg border border-warning-200 dark:border-warning-800">
+      <div className="p-4 bg-warning-50 dark:bg-warning-900/30 rounded-lg border border-warning-200 dark:border-warning-700/50">
         <div className="flex items-center gap-2 mb-3">
-          <AlertTriangle size={16} className="text-warning-600 dark:text-warning-500" />
-          <span className="text-sm font-semibold text-warning-700 dark:text-warning-400">
+          <AlertTriangle size={16} className="text-warning-600 dark:text-warning-400" />
+          <span className="text-sm font-semibold text-warning-700 dark:text-warning-300">
             Requires Attention
           </span>
         </div>
         <div className="flex justify-between items-center">
           <div>
-            <div className="text-3xl font-bold text-warning-700 dark:text-warning-400">
+            <div className="text-3xl font-bold text-warning-700 dark:text-warning-300">
               {(next6Hours?.requiresAttention || 0) + (next24Hours?.requiresAttention || 0)}
             </div>
-            <div className="text-xs text-warning-600 dark:text-warning-500 mt-1">
+            <div className="text-xs text-warning-600 dark:text-warning-400 mt-1">
               flights need monitoring
             </div>
           </div>
           <div className="flex gap-3">
             <div className="text-center">
-              <div className="text-xl font-bold text-danger-600 dark:text-danger-500">
+              <div className="text-xl font-bold text-danger-600 dark:text-danger-400">
                 {(overview?.highRiskNext6h || 0) + (overview?.highRiskNext24h || 0)}
               </div>
-              <div className="text-[10px] text-warning-600 dark:text-warning-500 mt-0.5">
+              <div className="text-[10px] text-warning-600 dark:text-warning-400 mt-0.5">
                 High Risk
               </div>
             </div>
             <div className="text-center">
-              <div className="text-xl font-bold text-warning-600 dark:text-warning-500">
+              <div className="text-xl font-bold text-warning-600 dark:text-warning-400">
                 {(overview?.mediumRiskNext6h || 0) + (overview?.mediumRiskNext24h || 0)}
               </div>
-              <div className="text-[10px] text-warning-600 dark:text-warning-500 mt-0.5">
+              <div className="text-[10px] text-warning-600 dark:text-warning-400 mt-0.5">
                 Medium Risk
               </div>
             </div>
@@ -184,7 +184,7 @@ const AIInsightsCard = () => {
       </div>
 
       {/* Footer Note */}
-      <div className="mt-4 p-3 bg-primary-50 dark:bg-primary-950 rounded-lg border border-primary-200 dark:border-primary-800">
+      <div className="mt-4 p-3 bg-primary-50 dark:bg-primary-900/30 rounded-lg border border-primary-200 dark:border-primary-700/50">
         <div className="flex items-center gap-2">
           <CheckCircle size={14} className="text-primary-600 dark:text-primary-400" />
           <span className="text-xs text-primary-700 dark:text-primary-300">

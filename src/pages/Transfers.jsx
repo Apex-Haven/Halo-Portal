@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
+import { getTransferDisplayName } from '../utils/transferUtils'
 
 const Transfers = () => {
   const { user, isRole } = useAuth()
@@ -480,7 +481,7 @@ const Transfers = () => {
                 className="grid grid-cols-[100px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,150px)_90px_auto] gap-2 px-4 py-3 border-b border-border items-center text-sm transition-colors hover:bg-muted/30"
               >
                 <div className="font-semibold text-foreground text-xs">
-                  {transfer._id || 'N/A'}
+                  {getTransferDisplayName(transfer)}
                 </div>
                 
                 <div className="overflow-hidden text-ellipsis">
@@ -500,7 +501,7 @@ const Transfers = () => {
                   ) : (
                     <>
                   <div 
-                    onClick={() => navigate(`/flight-tracking?flight=${transfer.flight_details?.flight_no || transfer.flight_details?.flight_number}`)}
+                    onClick={() => navigate(`/flights?flight=${transfer.flight_details?.flight_no || transfer.flight_details?.flight_number}`)}
                     className="font-medium text-primary cursor-pointer flex items-center gap-1 hover:underline"
                   >
                     <Plane size={14} />

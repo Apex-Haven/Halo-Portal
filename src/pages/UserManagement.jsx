@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit, Trash2, X, User, Building, Users, Shield, Link2 } from 'lucide-react'
+import { Search, Plus, Edit, Trash2, User, Building, Users, Shield, Info, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 import { useApi } from '../hooks/useApi'
@@ -14,12 +14,10 @@ const UserManagement = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [showForm, setShowForm] = useState(false)
-  const [showAssignModal, setShowAssignModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const [showUnassignConfirm, setShowUnassignConfirm] = useState(false)
-  const [unassignData, setUnassignData] = useState({ vendorId: null, clientId: null, clientName: '' })
   const [userToDelete, setUserToDelete] = useState(null)
   const [selectedUser, setSelectedUser] = useState(null)
+  const [showPhoneTooltip, setShowPhoneTooltip] = useState(false)
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -31,15 +29,26 @@ const UserManagement = () => {
     companyName: ''
   })
   const [vendors, setVendors] = useState([])
-  const [clients, setClients] = useState([])
+  const [clientTravelers, setClientTravelers] = useState({}) // Map of clientId -> travelers array
+  const [vendorDrivers, setVendorDrivers] = useState({}) // Map of vendorId -> drivers array
+  const [showAssignedModal, setShowAssignedModal] = useState(false)
+  const [assignedModalData, setAssignedModalData] = useState({ type: null, userId: null, title: '' })
 
   useEffect(() => {
     if (currentUser && (currentUser.role === 'SUPER_ADMIN' || currentUser.role === 'ADMIN')) {
       fetchUsers()
       fetchVendors()
-      fetchClients()
     }
   }, [currentUser])
+
+  useEffect(() => {
+    if (users.length > 0) {
+      // Fetch all travelers and drivers once, then filter client-side
+      fetchClientTravelers()
+      fetchVendorDrivers()
+    }
+  }, [users])
+
 
   const fetchUsers = async () => {
     try {
@@ -67,16 +76,62 @@ const UserManagement = () => {
     }
   }
 
-  const fetchClients = async () => {
+  const fetchClientTravelers = async () => {
     try {
-      const response = await api.get('/users/clients')
+      // Fetch all travelers once
+      const response = await api.get('/travelers')
       if (response.success) {
-        setClients(response.data || [])
+        const allTravelers = response.data || []
+        const travelersMap = {}
+        
+        // Group travelers by client (createdBy)
+        allTravelers.forEach(traveler => {
+          const createdById = traveler.createdBy?._id || traveler.createdBy
+          if (createdById) {
+            const clientId = createdById.toString()
+            if (!travelersMap[clientId]) {
+              travelersMap[clientId] = []
+            }
+            travelersMap[clientId].push(traveler)
+          }
+        })
+        
+        setClientTravelers(travelersMap)
       }
     } catch (error) {
-      console.error('Error fetching clients:', error)
+      console.error('Error fetching travelers:', error)
+      setClientTravelers({})
     }
   }
+
+  const fetchVendorDrivers = async () => {
+    try {
+      // Fetch all drivers once
+      const response = await api.get('/drivers')
+      if (response.success) {
+        const allDrivers = response.data || []
+        const driversMap = {}
+        
+        // Group drivers by vendor (vendorId or createdBy)
+        allDrivers.forEach(driver => {
+          const vendorId = driver.vendorId?._id || driver.vendorId || driver.createdBy?._id || driver.createdBy
+          if (vendorId) {
+            const vendorIdStr = vendorId.toString()
+            if (!driversMap[vendorIdStr]) {
+              driversMap[vendorIdStr] = []
+            }
+            driversMap[vendorIdStr].push(driver)
+          }
+        })
+        
+        setVendorDrivers(driversMap)
+      }
+    } catch (error) {
+      console.error('Error fetching drivers:', error)
+      setVendorDrivers({})
+    }
+  }
+
 
   const handleCreateUser = async (e) => {
     e.preventDefault()
@@ -107,7 +162,6 @@ const UserManagement = () => {
         resetForm()
         fetchUsers()
         fetchVendors()
-        fetchClients()
       }
     } catch (error) {
       toast.error(error.response?.data?.message || error.message || 'Failed to create user')
@@ -148,7 +202,6 @@ const UserManagement = () => {
         resetForm()
         fetchUsers()
         fetchVendors()
-        fetchClients()
       }
     } catch (error) {
       toast.error(error.response?.data?.message || error.message || 'Failed to update user')
@@ -193,47 +246,6 @@ const UserManagement = () => {
     }
   }
 
-  const handleAssignVendorToClient = async (vendorId, clientId) => {
-    try {
-      const response = await api.post(`/users/vendors/${vendorId}/assign-client/${clientId}`)
-      if (response.success) {
-        toast.success('Vendor assigned to client successfully')
-        setShowAssignModal(false)
-        fetchUsers()
-        fetchVendors()
-        fetchClients()
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || error.message || 'Failed to assign vendor')
-    }
-  }
-
-  const handleUnassignClick = (vendorId, client) => {
-    setUnassignData({
-      vendorId,
-      clientId: client._id,
-      clientName: `${client.profile?.firstName} ${client.profile?.lastName}`
-    })
-    setShowUnassignConfirm(true)
-  }
-
-  const handleUnassignVendorFromClient = async () => {
-    if (!unassignData.vendorId || !unassignData.clientId) return
-
-    try {
-      const response = await api.delete(`/users/vendors/${unassignData.vendorId}/unassign-client/${unassignData.clientId}`)
-      if (response.success) {
-        toast.success('Vendor unassigned from client successfully')
-        setShowUnassignConfirm(false)
-        setUnassignData({ vendorId: null, clientId: null, clientName: '' })
-        fetchUsers()
-        fetchVendors()
-        fetchClients()
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || error.message || 'Failed to unassign vendor')
-    }
-  }
 
   const resetForm = () => {
     setFormData({
@@ -276,28 +288,30 @@ const UserManagement = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="max-w-[1200px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">User Management</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage vendors, clients, and admins</p>
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">User Management</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-base">Manage vendors, clients, and admins</p>
+          </div>
+          <button
+            onClick={() => {
+              setSelectedUser(null)
+              resetForm()
+              setShowForm(true)
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            <Plus size={20} />
+            Create User
+          </button>
         </div>
-        <button
-          onClick={() => {
-            setSelectedUser(null)
-            resetForm()
-            setShowForm(true)
-          }}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-        >
-          <Plus size={20} />
-          Create User
-        </button>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-4 items-center">
+      <div className="flex gap-4 items-center mb-6">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={20} />
           <input
@@ -371,15 +385,86 @@ const UserManagement = () => {
                   </td>
                   <td className="px-4 py-3 text-sm text-foreground">{user.email}</td>
                   <td className="px-4 py-3">
-                    {user.role === 'VENDOR' && user.assignedClients?.length > 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        {user.assignedClients.length} client{user.assignedClients.length > 1 ? 's' : ''}
+                    {user.role === 'VENDOR' && (
+                      <div className="space-y-1">
+                        {vendorDrivers[user._id]?.length > 0 && (
+                          <div 
+                            className="text-xs text-muted-foreground cursor-pointer relative"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setAssignedModalData({
+                                type: 'drivers',
+                                userId: user._id,
+                                title: `Drivers for ${user.profile?.firstName} ${user.profile?.lastName}`
+                              })
+                              setShowAssignedModal(true)
+                            }}
+                          >
+                            <span className="font-medium text-foreground hover:text-primary transition-colors">{vendorDrivers[user._id].length}</span> driver{vendorDrivers[user._id].length > 1 ? 's' : ''}
+                          </div>
+                        )}
+                        {user.assignedClients?.length > 0 && (
+                          <div 
+                            className="text-xs text-muted-foreground cursor-pointer relative"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setAssignedModalData({
+                                type: 'clients',
+                                userId: user._id,
+                                title: `Assigned Clients for ${user.profile?.firstName} ${user.profile?.lastName}`
+                              })
+                              setShowAssignedModal(true)
+                            }}
+                          >
+                            <span className="font-medium text-foreground hover:text-primary transition-colors">{user.assignedClients.length}</span> client{user.assignedClients.length > 1 ? 's' : ''}
+                          </div>
+                        )}
+                        {(!vendorDrivers[user._id] || vendorDrivers[user._id].length === 0) && (!user.assignedClients || user.assignedClients.length === 0) && (
+                          <div className="text-xs text-muted-foreground">-</div>
+                        )}
                       </div>
                     )}
-                    {user.role === 'CLIENT' && user.assignedVendors?.length > 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        {user.assignedVendors.length} vendor{user.assignedVendors.length > 1 ? 's' : ''}
+                    {user.role === 'CLIENT' && (
+                      <div className="space-y-1">
+                        {clientTravelers[user._id]?.length > 0 && (
+                          <div 
+                            className="text-xs text-muted-foreground cursor-pointer relative"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setAssignedModalData({
+                                type: 'travelers',
+                                userId: user._id,
+                                title: `Travelers for ${user.profile?.firstName} ${user.profile?.lastName}`
+                              })
+                              setShowAssignedModal(true)
+                            }}
+                          >
+                            <span className="font-medium text-foreground hover:text-primary transition-colors">{clientTravelers[user._id].length}</span> traveler{clientTravelers[user._id].length > 1 ? 's' : ''}
+                          </div>
+                        )}
+                        {user.assignedVendors?.length > 0 && (
+                          <div 
+                            className="text-xs text-muted-foreground cursor-pointer relative"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setAssignedModalData({
+                                type: 'vendors',
+                                userId: user._id,
+                                title: `Assigned Vendors for ${user.profile?.firstName} ${user.profile?.lastName}`
+                              })
+                              setShowAssignedModal(true)
+                            }}
+                          >
+                            <span className="font-medium text-foreground hover:text-primary transition-colors">{user.assignedVendors.length}</span> vendor{user.assignedVendors.length > 1 ? 's' : ''}
+                          </div>
+                        )}
+                        {(!clientTravelers[user._id] || clientTravelers[user._id].length === 0) && (!user.assignedVendors || user.assignedVendors.length === 0) && (
+                          <div className="text-xs text-muted-foreground">-</div>
+                        )}
                       </div>
+                    )}
+                    {user.role !== 'VENDOR' && user.role !== 'CLIENT' && (
+                      <div className="text-xs text-muted-foreground">-</div>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -391,18 +476,6 @@ const UserManagement = () => {
                       >
                         <Edit size={16} />
                       </button>
-                      {user.role === 'VENDOR' && (
-                        <button
-                          onClick={() => {
-                            setSelectedUser(user)
-                            setShowAssignModal(true)
-                          }}
-                          className="p-2 text-primary hover:bg-primary/10 rounded transition-colors"
-                          title="Assign Clients"
-                        >
-                          <Link2 size={16} />
-                        </button>
-                      )}
                       {canDelete(user) && (
                         <button
                           onClick={() => handleDeleteClick(user)}
@@ -521,13 +594,49 @@ const UserManagement = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Phone</label>
+                <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-1">
+                  Phone
+                  <div className="relative inline-flex items-center">
+                    <button
+                      type="button"
+                      onMouseEnter={() => setShowPhoneTooltip(true)}
+                      onMouseLeave={() => setShowPhoneTooltip(false)}
+                      onClick={() => setShowPhoneTooltip(!showPhoneTooltip)}
+                      className="focus:outline-none p-1 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                      title="Phone format requirements"
+                    >
+                      <Info size={18} className="text-blue-600 dark:text-blue-400 cursor-help hover:text-blue-700 dark:hover:text-blue-300 transition-colors" />
+                    </button>
+                    {showPhoneTooltip && (
+                      <div className="absolute left-0 bottom-full mb-2 z-50 w-72 p-3 bg-gray-900 dark:bg-gray-800 text-white text-xs rounded-lg shadow-xl border border-gray-700">
+                        <div className="font-semibold mb-2 text-sm">Phone Format Requirements:</div>
+                        <ul className="space-y-1.5 list-disc list-inside text-xs">
+                          <li>Must start with <code className="bg-gray-700 px-1.5 py-0.5 rounded">+</code></li>
+                          <li>Followed by country code (1-9, not 0)</li>
+                          <li>Then 1-14 more digits</li>
+                          <li>No spaces allowed</li>
+                          <li className="mt-2 font-semibold">Example: <code className="bg-gray-700 px-1.5 py-0.5 rounded">+918108457911</code></li>
+                        </ul>
+                        <div className="absolute left-4 -bottom-1.5 w-3 h-3 bg-gray-900 dark:bg-gray-800 border-r border-b border-gray-700 transform rotate-45"></div>
+                      </div>
+                    )}
+                  </div>
+                </label>
                 <input
                   type="tel"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={(e) => {
+                    // Remove spaces and keep only valid characters (+ and digits)
+                    const cleaned = e.target.value.replace(/\s/g, '')
+                    setFormData({ ...formData, phone: cleaned })
+                  }}
+                  placeholder="+918108457911"
                   className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
+                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                  <Info size={12} />
+                  Format: +[country code][number] (e.g., +918108457911)
+                </p>
               </div>
 
               {(formData.role === 'VENDOR' || selectedUser?.role === 'VENDOR') && (
@@ -568,6 +677,182 @@ const UserManagement = () => {
             </form>
         </div>
       </Drawer>
+
+      {/* Assigned Items Modal */}
+      {showAssignedModal && assignedModalData.type && assignedModalData.userId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-xl max-w-2xl w-full max-h-[80vh] flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-border">
+              <h2 className="text-xl font-bold text-foreground">
+                {assignedModalData.title}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowAssignedModal(false)
+                  setAssignedModalData({ type: null, userId: null, title: '' })
+                }}
+                className="p-2 hover:bg-muted rounded transition-colors"
+              >
+                <X size={20} className="text-muted-foreground" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="space-y-3">
+                {assignedModalData.type === 'drivers' && (
+                  vendorDrivers[assignedModalData.userId]?.length > 0 ? (
+                    vendorDrivers[assignedModalData.userId].map((driver, idx) => (
+                      <div key={driver._id || idx} className="p-4 bg-muted/30 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <User size={20} className="text-primary" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-semibold text-foreground">
+                              {driver.profile?.firstName} {driver.profile?.lastName}
+                            </div>
+                            {driver.email && (
+                              <div className="text-sm text-muted-foreground mt-1">{driver.email}</div>
+                            )}
+                            {driver.driverDetails?.vehicleType && (
+                              <div className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
+                                <span className="font-medium">Vehicle:</span>
+                                <span>{driver.driverDetails.vehicleType}</span>
+                                {driver.driverDetails.vehicleNumber && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{driver.driverDetails.vehicleNumber}</span>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                            {driver.profile?.phone && (
+                              <div className="text-sm text-muted-foreground mt-1">
+                                Phone: {driver.profile.phone}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">No drivers found</div>
+                  )
+                )}
+
+                {assignedModalData.type === 'travelers' && (
+                  clientTravelers[assignedModalData.userId]?.length > 0 ? (
+                    clientTravelers[assignedModalData.userId].map((traveler, idx) => (
+                      <div key={traveler._id || idx} className="p-4 bg-muted/30 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <User size={20} className="text-primary" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-semibold text-foreground">
+                              {traveler.profile?.firstName} {traveler.profile?.lastName}
+                            </div>
+                            {traveler.email && (
+                              <div className="text-sm text-muted-foreground mt-1">{traveler.email}</div>
+                            )}
+                            {traveler.profile?.phone && (
+                              <div className="text-sm text-muted-foreground mt-1">
+                                Phone: {traveler.profile.phone}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">No travelers found</div>
+                  )
+                )}
+
+                {assignedModalData.type === 'clients' && (
+                  users.find(u => u._id === assignedModalData.userId)?.assignedClients?.length > 0 ? (
+                    users.find(u => u._id === assignedModalData.userId)?.assignedClients.map((client, idx) => (
+                      <div key={client._id || client || idx} className="p-4 bg-muted/30 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Users size={20} className="text-primary" />
+                          </div>
+                          <div className="flex-1">
+                            {typeof client === 'object' && client.profile ? (
+                              <>
+                                <div className="font-semibold text-foreground">
+                                  {client.profile.firstName} {client.profile.lastName}
+                                </div>
+                                {client.email && (
+                                  <div className="text-sm text-muted-foreground mt-1">{client.email}</div>
+                                )}
+                              </>
+                            ) : (
+                              <div className="text-sm text-muted-foreground">Client ID: {client}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">No assigned clients found</div>
+                  )
+                )}
+
+                {assignedModalData.type === 'vendors' && (
+                  users.find(u => u._id === assignedModalData.userId)?.assignedVendors?.length > 0 ? (
+                    users.find(u => u._id === assignedModalData.userId)?.assignedVendors.map((vendor, idx) => (
+                      <div key={vendor._id || vendor || idx} className="p-4 bg-muted/30 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Building size={20} className="text-primary" />
+                          </div>
+                          <div className="flex-1">
+                            {typeof vendor === 'object' && vendor.profile ? (
+                              <>
+                                <div className="font-semibold text-foreground">
+                                  {vendor.profile.firstName} {vendor.profile.lastName}
+                                </div>
+                                {vendor.email && (
+                                  <div className="text-sm text-muted-foreground mt-1">{vendor.email}</div>
+                                )}
+                                {vendor.vendorDetails?.companyName && (
+                                  <div className="text-sm text-muted-foreground mt-1">
+                                    Company: {vendor.vendorDetails.companyName}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div className="text-sm text-muted-foreground">Vendor ID: {vendor}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">No assigned vendors found</div>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-border bg-muted/30">
+              <button
+                onClick={() => {
+                  setShowAssignedModal(false)
+                  setAssignedModalData({ type: null, userId: null, title: '' })
+                }}
+                className="w-full px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && userToDelete && (
@@ -624,104 +909,6 @@ const UserManagement = () => {
         </div>
       )}
 
-      {/* Unassign Confirmation Modal */}
-      {showUnassignConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-card border border-border rounded-xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
-                <Link2 size={24} className="text-destructive" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-xl font-bold text-foreground mb-2">Unassign Client</h2>
-                <p className="text-sm text-muted-foreground">
-                  Are you sure you want to unassign <span className="font-semibold text-foreground">{unassignData.clientName}</span> from this vendor?
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUnassignConfirm(false)
-                  setUnassignData({ vendorId: null, clientId: null, clientName: '' })
-                }}
-                className="flex-1 px-4 py-2.5 bg-background border-2 border-border rounded-lg text-foreground font-semibold hover:bg-muted transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleUnassignVendorFromClient}
-                className="flex-1 px-4 py-2.5 bg-destructive text-destructive-foreground rounded-lg font-semibold hover:bg-destructive/90 transition-all shadow-lg"
-              >
-                Unassign
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Assign Vendor to Client Modal */}
-      {showAssignModal && selectedUser && selectedUser.role === 'VENDOR' && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card border border-border rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-foreground">Assign Clients to Vendor</h2>
-              <button
-                onClick={() => {
-                  setShowAssignModal(false)
-                  setSelectedUser(null)
-                }}
-                className="p-1 hover:bg-muted rounded transition-colors"
-              >
-                <X size={20} className="text-muted-foreground" />
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              <div className="text-sm text-muted-foreground mb-2">
-                Vendor: {selectedUser.profile?.firstName} {selectedUser.profile?.lastName}
-              </div>
-              {clients.map((client) => {
-                const isAssigned = selectedUser.assignedClients?.some(
-                  c => c._id === client._id || c === client._id
-                )
-                return (
-                  <div
-                    key={client._id}
-                    className="flex items-center justify-between p-3 bg-muted/30 rounded-lg"
-                  >
-                    <div>
-                      <div className="font-medium text-foreground">
-                        {client.profile?.firstName} {client.profile?.lastName}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{client.email}</div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (isAssigned) {
-                          handleUnassignClick(selectedUser._id, client)
-                        } else {
-                          handleAssignVendorToClient(selectedUser._id, client._id)
-                        }
-                      }}
-                      className={`px-3 py-1 rounded text-sm transition-colors ${
-                        isAssigned
-                          ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                          : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                      }`}
-                    >
-                      {isAssigned ? 'Unassign' : 'Assign'}
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

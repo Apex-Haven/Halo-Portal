@@ -22,7 +22,10 @@ const hotelPdfService = {
       const response = await axios.post(
         `${API_BASE_URL}/hotel-pdf/extract-images`,
         { links },
-        { headers: getHeaders() }
+        { 
+          headers: getHeaders(),
+          timeout: 300000 // 5 minute timeout for image extraction
+        }
       );
       return response.data;
     } catch (error) {
@@ -30,8 +33,24 @@ const hotelPdfService = {
       
       // Handle specific error cases
       if (error.response) {
+        // Handle 401 (token expired)
+        if (error.response.status === 401) {
+          localStorage.removeItem('token');
+          window.location.href = '/login';
+          throw new Error('Session expired. Please log in again.');
+        }
+        
+        // Handle 504 (timeout)
+        if (error.response.status === 504) {
+          throw new Error(error.response.data?.message || 'Image extraction timed out. Please try again with fewer links.');
+        }
+        
         throw new Error(error.response.data?.message || 'Failed to extract images');
       } else if (error.request) {
+        // Network error or timeout
+        if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+          throw new Error('Request timed out. The image extraction is taking too long. Please try again with fewer links.');
+        }
         throw new Error('Network error: Could not reach server');
       } else {
         throw new Error(error.message || 'Failed to extract images');

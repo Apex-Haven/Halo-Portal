@@ -1,19 +1,24 @@
 import { useState, useEffect } from 'react'
-import { Search, Plus, Edit, Trash2, Car, Users, Building2 } from 'lucide-react'
+import { Search, Plus, Edit, Trash2, Car, Users, Building2, ChevronDown, ChevronUp, Filter } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 import { useApi } from '../hooks/useApi'
 import Drawer from '../components/Drawer'
+import Dropdown from '../components/Dropdown'
 
 const Drivers = () => {
-  const { user: currentUser } = useAuth()
+  const { user: currentUser, isRole } = useAuth()
   const api = useApi()
   const [drivers, setDrivers] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [vendorFilter, setVendorFilter] = useState('all')
+  const [collapsedVendors, setCollapsedVendors] = useState(new Set())
   const [showForm, setShowForm] = useState(false)
   const [selectedDriver, setSelectedDriver] = useState(null)
   const [assignedClients, setAssignedClients] = useState({})
+  const [vendors, setVendors] = useState([])
+  const [loadingVendors, setLoadingVendors] = useState(false)
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -24,7 +29,8 @@ const Drivers = () => {
     licenseNumber: '',
     vehicleType: '',
     vehicleNumber: '',
-    experience: ''
+    experience: '',
+    vendorId: ''
   })
 
   useEffect(() => {
@@ -32,6 +38,12 @@ const Drivers = () => {
       fetchDrivers()
     }
   }, [currentUser])
+
+  useEffect(() => {
+    if (showForm && !selectedDriver && isRole('SUPER_ADMIN', 'ADMIN')) {
+      fetchVendors()
+    }
+  }, [showForm, selectedDriver, currentUser])
 
   useEffect(() => {
     if (drivers.length > 0) {
@@ -51,6 +63,21 @@ const Drivers = () => {
       toast.error('Failed to load drivers')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchVendors = async () => {
+    try {
+      setLoadingVendors(true)
+      const response = await api.get('/users/vendors')
+      if (response.success) {
+        setVendors(response.data || [])
+      }
+    } catch (error) {
+      console.error('Error fetching vendors:', error)
+      toast.error('Failed to load vendors')
+    } finally {
+      setLoadingVendors(false)
     }
   }
 
@@ -87,6 +114,11 @@ const Drivers = () => {
           vehicleNumber: formData.vehicleNumber,
           experience: parseInt(formData.experience) || 0
         }
+      }
+
+      // If admin selected a vendor, include it in the payload
+      if (isRole('SUPER_ADMIN', 'ADMIN') && formData.vendorId) {
+        payload.vendorId = formData.vendorId
       }
 
       const response = await api.post('/drivers', payload)
@@ -178,16 +210,115 @@ const Drivers = () => {
       licenseNumber: '',
       vehicleType: '',
       vehicleNumber: '',
-      experience: ''
+      experience: '',
+      vendorId: ''
     })
     setSelectedDriver(null)
   }
 
-  const filteredDrivers = drivers.filter(driver =>
-    driver.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    driver.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    `${driver.profile?.firstName} ${driver.profile?.lastName}`.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  // Get vendor name from driver
+  const getVendorName = (driver) => {
+    if (!driver.vendorId && !driver.createdBy) return 'Unassigned'
+    const vendor = driver.vendorId || driver.createdBy
+    if (typeof vendor === 'object') {
+      return vendor.vendorDetails?.companyName || 
+             vendor.companyName || 
+             (vendor.profile?.firstName && vendor.profile?.lastName 
+               ? `${vendor.profile.firstName} ${vendor.profile.lastName}` 
+               : vendor.username || vendor.email || 'Unknown Vendor')
+    }
+    return 'Unknown Vendor'
+  }
+
+  // Get unique vendors from drivers
+  const uniqueVendors = Array.from(
+    new Set(
+      drivers
+        .map(d => {
+          const vendorId = d.vendorId?._id || d.vendorId || d.createdBy?._id || d.createdBy || 'unassigned'
+          return vendorId.toString()
+        })
+        .filter(Boolean)
+    )
+  ).map(vendorId => {
+    const driver = drivers.find(d => {
+      const id = d.vendorId?._id || d.vendorId || d.createdBy?._id || d.createdBy
+      return id && id.toString() === vendorId
+    })
+    if (!driver) return null
+    return {
+      id: vendorId,
+      name: getVendorName(driver),
+      driver: driver
+    }
+  }).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+
+  // Add "Unassigned" if there are drivers without vendor
+  const hasUnassigned = drivers.some(d => !d.vendorId && !d.createdBy)
+  if (hasUnassigned && !uniqueVendors.find(v => v.id === 'unassigned')) {
+    uniqueVendors.push({
+      id: 'unassigned',
+      name: 'Unassigned',
+      driver: null
+    })
+  }
+
+  // Filter drivers by search term and vendor filter
+  const filteredDrivers = drivers.filter(driver => {
+    const matchesSearch = 
+      driver.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      driver.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      `${driver.profile?.firstName} ${driver.profile?.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getVendorName(driver).toLowerCase().includes(searchTerm.toLowerCase())
+    
+    if (!matchesSearch) return false
+    
+    if (vendorFilter === 'all') return true
+    
+    const driverVendorId = driver.vendorId?._id || driver.vendorId || driver.createdBy?._id || driver.createdBy || 'unassigned'
+    return driverVendorId.toString() === vendorFilter
+  })
+
+  // Group drivers by vendor
+  const groupedDrivers = uniqueVendors.reduce((acc, vendor) => {
+    const vendorDrivers = filteredDrivers.filter(d => {
+      const driverVendorId = d.vendorId?._id || d.vendorId || d.createdBy?._id || d.createdBy || 'unassigned'
+      return driverVendorId.toString() === vendor.id
+    })
+    if (vendorDrivers.length > 0) {
+      acc.push({
+        vendor: vendor.name,
+        vendorId: vendor.id,
+        drivers: vendorDrivers
+      })
+    }
+    return acc
+  }, [])
+
+  const toggleVendorCollapse = (vendorId) => {
+    setCollapsedVendors(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(vendorId)) {
+        newSet.delete(vendorId)
+      } else {
+        newSet.add(vendorId)
+      }
+      return newSet
+    })
+  }
+
+  // Vendor filter options
+  const vendorFilterOptions = [
+    { value: 'all', label: 'All Vendors' },
+    ...uniqueVendors.map(vendor => ({
+      value: vendor.id,
+      label: `${vendor.name} (${drivers.filter(d => {
+        const driverVendorId = d.vendorId?._id || d.vendorId || d.createdBy?._id || d.createdBy || 'unassigned'
+        return driverVendorId.toString() === vendor.id
+      }).length})`
+    }))
+  ]
+
 
   if (!currentUser || !['VENDOR', 'SUPER_ADMIN', 'ADMIN'].includes(currentUser.role)) {
     return (
@@ -199,13 +330,14 @@ const Drivers = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="max-w-[1200px] mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Drivers</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage your drivers</p>
-        </div>
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Drivers</h1>
+            <p className="text-gray-500 dark:text-gray-400 text-base">Manage your drivers</p>
+          </div>
         <button
           onClick={() => {
             resetForm()
@@ -216,104 +348,125 @@ const Drivers = () => {
           <Plus size={20} />
           Add Driver
         </button>
+        </div>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={20} />
-        <input
-          type="text"
-          placeholder="Search drivers..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 bg-background border border-input rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        />
+      {/* Search and Filter */}
+      <div className="flex gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={20} />
+          <input
+            type="text"
+            placeholder="Search drivers..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-background border border-input rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+        <div className="w-64">
+          <Dropdown
+            name="vendorFilter"
+            value={vendorFilter}
+            onChange={(e) => setVendorFilter(e.target.value)}
+            options={vendorFilterOptions}
+            placeholder="Filter by vendor"
+            minWidth="100%"
+          />
+        </div>
       </div>
 
       {/* Drivers List */}
       {loading ? (
         <div className="text-center py-12 text-muted-foreground">Loading...</div>
-      ) : filteredDrivers.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredDrivers.map((driver) => (
-            <div
-              key={driver._id}
-              className="bg-card border border-border rounded-lg p-4 hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start justify-between mb-3">
+      ) : groupedDrivers.length > 0 ? (
+        <div className="space-y-4">
+          {groupedDrivers.map((group) => (
+            <div key={group.vendorId} className="bg-card border border-border rounded-lg overflow-hidden">
+              {/* Vendor Header */}
+              <button
+                onClick={() => toggleVendorCollapse(group.vendorId)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-muted/30 hover:bg-muted/50 transition-colors"
+              >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Car size={20} className="text-primary" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-foreground">
-                      {driver.profile?.firstName} {driver.profile?.lastName}
-                    </div>
-                    <div className="text-xs text-muted-foreground">{driver.email}</div>
-                  </div>
+                  <Filter size={16} className="text-muted-foreground" />
+                  <span className="font-semibold text-foreground">
+                    Vendor: {group.vendor}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    ({group.drivers.length} driver{group.drivers.length !== 1 ? 's' : ''})
+                  </span>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleEditDriver(driver)}
-                    className="p-2 text-primary hover:bg-primary/10 rounded transition-colors"
-                    title="Edit"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteDriver(driver._id)}
-                    className="p-2 text-destructive hover:bg-destructive/10 rounded transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Show vendor info for admins */}
-              {(currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN') && (driver.vendorId || driver.createdBy) && (
-                <div className="mb-2 pb-2 border-b border-border">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Building2 size={14} />
-                    <span>
-                      Vendor: {(() => {
-                        // Check vendorId first (populated vendor object)
-                        const vendor = driver.vendorId || driver.createdBy;
-                        if (!vendor) return 'Unknown';
-                        if (typeof vendor === 'object') {
-                          // Try different possible fields
-                          return vendor.vendorDetails?.companyName || 
-                                 vendor.companyName || 
-                                 (vendor.profile?.firstName && vendor.profile?.lastName 
-                                   ? `${vendor.profile.firstName} ${vendor.profile.lastName}` 
-                                   : vendor.username || vendor.email || 'Unknown');
-                        }
-                        return 'Unknown';
-                      })()}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {driver.driverDetails && (
-                <div className="space-y-1 text-sm text-muted-foreground">
-                  {driver.driverDetails.vehicleType && (
-                    <div>Vehicle: {driver.driverDetails.vehicleType}</div>
-                  )}
-                  {driver.driverDetails.vehicleNumber && (
-                    <div>Vehicle #: {driver.driverDetails.vehicleNumber}</div>
-                  )}
-                  {driver.driverDetails.experience !== undefined && (
-                    <div>Experience: {driver.driverDetails.experience} years</div>
-                  )}
-                </div>
-              )}
-
-              {assignedClients[driver._id] && assignedClients[driver._id].length > 0 && (
-                <div className="mt-3 pt-3 border-t border-border">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Users size={14} />
-                    <span>{assignedClients[driver._id].length} assigned client{assignedClients[driver._id].length > 1 ? 's' : ''}</span>
+                {collapsedVendors.has(group.vendorId) ? (
+                  <ChevronDown size={20} className="text-muted-foreground" />
+                ) : (
+                  <ChevronUp size={20} className="text-muted-foreground" />
+                )}
+              </button>
+              
+              {/* Drivers Grid */}
+              {!collapsedVendors.has(group.vendorId) && (
+                <div className="p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {group.drivers.map((driver) => (
+                      <div
+                        key={driver._id}
+                        className="bg-background border border-border rounded-lg p-4 hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                              <Car size={20} className="text-primary" />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-foreground">
+                                {driver.profile?.firstName} {driver.profile?.lastName}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{driver.email}</div>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleEditDriver(driver)}
+                              className="p-2 text-primary hover:bg-primary/10 rounded transition-colors"
+                              title="Edit"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteDriver(driver._id)}
+                              className="p-2 text-destructive hover:bg-destructive/10 rounded transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground mb-1">
+                          Vendor: {getVendorName(driver)}
+                        </div>
+                        {driver.driverDetails && (
+                          <div className="space-y-1 text-sm text-muted-foreground">
+                            {driver.driverDetails.vehicleType && (
+                              <div>Vehicle: {driver.driverDetails.vehicleType}</div>
+                            )}
+                            {driver.driverDetails.vehicleNumber && (
+                              <div>Vehicle #: {driver.driverDetails.vehicleNumber}</div>
+                            )}
+                            {driver.driverDetails.experience !== undefined && (
+                              <div>Experience: {driver.driverDetails.experience} years</div>
+                            )}
+                          </div>
+                        )}
+                        {assignedClients[driver._id] && assignedClients[driver._id].length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Users size={14} />
+                              <span>{assignedClients[driver._id].length} assigned client{assignedClients[driver._id].length > 1 ? 's' : ''}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -324,7 +477,7 @@ const Drivers = () => {
         <div className="text-center py-12 text-muted-foreground">
           <div className="text-base mb-2">No drivers found</div>
           <div className="text-sm text-muted-foreground/70">
-            {searchTerm ? 'Try adjusting your search' : 'Add your first driver to get started'}
+            {searchTerm || vendorFilter !== 'all' ? 'Try adjusting your search or filter' : 'Add your first driver to get started'}
           </div>
         </div>
       )}
@@ -345,6 +498,33 @@ const Drivers = () => {
           {/* Form Content */}
           <div className="flex-1 overflow-y-auto px-6 pt-6 pb-4">
             <div className="space-y-4">
+              {/* Vendor Selection - Only for admins when creating new driver */}
+              {!selectedDriver && isRole('SUPER_ADMIN', 'ADMIN') && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">Vendor</label>
+                  <Dropdown
+                    name="vendorId"
+                    value={formData.vendorId}
+                    onChange={(e) => setFormData({ ...formData, vendorId: e.target.value })}
+                    options={[
+                      { value: '', label: 'Select a vendor (optional)' },
+                      ...vendors.map(vendor => ({
+                        value: vendor._id,
+                        label: `${vendor.profile?.firstName || ''} ${vendor.profile?.lastName || ''}`.trim() || vendor.username || vendor.email
+                      }))
+                    ]}
+                    placeholder="Select a vendor"
+                    minWidth="100%"
+                  />
+                  {loadingVendors && (
+                    <p className="text-xs text-muted-foreground mt-1">Loading vendors...</p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Select a vendor to assign this driver to. If not selected, driver will be assigned to you.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">Username</label>
                 <input

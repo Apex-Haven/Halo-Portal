@@ -172,7 +172,7 @@ const Tracking = () => {
         
         toast.success('Transfer found!');
       } else {
-        const errorMsg = data.message || 'Transfer not found. Please check your APX ID and try again.';
+        const errorMsg = data.message || 'Transfer not found. Please check your ID or name and try again.';
         toast.error(errorMsg);
         setTransfer(null);
       }
@@ -250,17 +250,17 @@ const Tracking = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-[1200px] mx-auto p-4 md:p-6">
+      <div className="max-w-[1200px] mx-auto">
         {/* Header */}
-        <div className="mb-6 md:mb-8 text-center md:text-left">
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-2">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             Track Your Transfer
           </h1>
-          <p className="text-sm md:text-base text-muted-foreground">
-            Enter your APX transfer ID (e.g., APX123456) to track your ride in real-time
+          <p className="text-gray-500 dark:text-gray-400 text-base">
+            Track your transfer using your Apex ID or name
           </p>
-          <p className="text-xs md:text-sm text-muted-foreground mt-1">
-            No login required - just enter your transfer ID below
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+            No login required - just enter your Apex ID (e.g., APX123456) or your name below
           </p>
         </div>
 
@@ -270,13 +270,21 @@ const Tracking = () => {
           <div className="flex flex-col md:flex-row gap-3">
           <div className="flex-1">
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              Transfer ID (APX)
+              Transfer ID or Name
             </label>
             <input
               type="text"
               value={trackingId}
-              onChange={(e) => setTrackingId(e.target.value.toUpperCase())}
-              placeholder="Enter your transfer ID (e.g., APX123456)"
+              onChange={(e) => {
+                const value = e.target.value;
+                // Auto-uppercase only if it looks like an APX ID
+                if (value.match(/^APX\d*$/i)) {
+                  setTrackingId(value.toUpperCase());
+                } else {
+                  setTrackingId(value);
+                }
+              }}
+              placeholder="Enter your Apex ID (e.g., APX123456) or your name"
               className="w-full px-4 py-3 border border-input rounded-lg text-base outline-none transition-colors bg-background text-foreground focus:ring-2 focus:ring-ring"
               onKeyPress={(e) => e.key === 'Enter' && handleTrackTransfer()}
               autoFocus
@@ -305,7 +313,7 @@ const Tracking = () => {
           </button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Your transfer ID was provided in your booking confirmation email or SMS
+            Enter your Apex ID (e.g., APX123456) or your name as it appears in your booking
           </p>
         </div>
       </div>
