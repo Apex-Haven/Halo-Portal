@@ -310,26 +310,26 @@ const Flights = () => {
   const getStatusBg = (status) => {
     switch (status?.toLowerCase()) {
       case 'landed':
-      case 'arrived': return 'bg-success-50 dark:bg-success-950 border-success-200 dark:border-success-800'
+      case 'arrived': return 'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700'
       case 'delayed':
-      case 'delayed_arrival': return 'bg-warning-50 dark:bg-warning-950 border-warning-200 dark:border-warning-800'
-      case 'cancelled': return 'bg-danger-50 dark:bg-danger-950 border-danger-200 dark:border-danger-800'
+      case 'delayed_arrival': return 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700'
+      case 'cancelled': return 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700'
       case 'scheduled':
-      case 'on_time': return 'bg-primary-50 dark:bg-primary-950 border-primary-300 dark:border-primary-700'
-      default: return 'bg-muted border-border'
+      case 'on_time': return 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700'
+      default: return 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-700'
     }
   }
 
   const getStatusTextColor = (status) => {
     switch (status?.toLowerCase()) {
       case 'landed':
-      case 'arrived': return 'text-success-600 dark:text-success-500'
+      case 'arrived': return 'text-green-700 dark:text-green-400'
       case 'delayed':
-      case 'delayed_arrival': return 'text-warning-600 dark:text-warning-500'
-      case 'cancelled': return 'text-danger-600 dark:text-danger-500'
+      case 'delayed_arrival': return 'text-yellow-700 dark:text-yellow-400'
+      case 'cancelled': return 'text-red-700 dark:text-red-400'
       case 'scheduled':
-      case 'on_time': return 'text-primary-600 dark:text-primary-400'
-      default: return 'text-muted-foreground'
+      case 'on_time': return 'text-blue-700 dark:text-blue-400'
+      default: return 'text-gray-700 dark:text-gray-300'
     }
   }
 
@@ -541,36 +541,51 @@ const Flights = () => {
                 {showDataSourceInfo && (
                   <div className="px-5 pb-5 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
                     <p className="m-0 mb-3 text-gray-700 dark:text-gray-300">
-                      <strong className="text-gray-900 dark:text-white">Current Status:</strong> We're using free-tier APIs from external flight data providers. 
-                      This means some flights may show limited information or estimated routes.
+                      <strong className="text-gray-900 dark:text-white">Current Status:</strong> We're using <strong className="text-blue-600 dark:text-blue-400">OpenSky Network</strong> as our primary flight tracking source - it's completely free and provides real-time flight positions!
                     </p>
                     
-                    <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3 mb-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertCircle size={16} className="text-yellow-600 dark:text-yellow-400" />
-                        <span className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
-                          Free Tier Limitations
-                        </span>
-                      </div>
-                      <ul className="m-0 pl-5 text-xs text-yellow-900 dark:text-yellow-200 space-y-1">
-                        <li>AviationStack: 100 requests/month limit (currently reached)</li>
-                        <li>OpenSky Network: Real-time positions only, no route details</li>
-                        <li>Some flights may show estimated airport information</li>
-                      </ul>
-                    </div>
-                    
-                    <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg p-3">
+                    <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg p-3 mb-3">
                       <div className="flex items-center gap-2 mb-2">
                         <CheckCircle size={16} className="text-green-600 dark:text-green-400" />
                         <span className="text-sm font-semibold text-green-800 dark:text-green-300">
-                          Upcoming Improvements
+                          OpenSky Network (Primary Source)
                         </span>
                       </div>
-                      <p className="m-0 text-xs text-green-900 dark:text-green-200">
-                        When we upgrade to paid flight data services, you'll get:
-                        <strong className="text-green-950 dark:text-green-100"> Complete route information, real-time status updates, terminal/gate details, 
-                        and accurate departure/arrival times</strong> - just like professional flight tracking sites!
-                      </p>
+                      <ul className="m-0 pl-5 text-xs text-green-900 dark:text-green-200 space-y-1">
+                        <li>✅ <strong>100% Free</strong> - No API key required</li>
+                        <li>✅ <strong>Unlimited requests</strong> - No rate limits</li>
+                        <li>✅ <strong>Real-time positions</strong> - Live flight tracking</li>
+                        <li>✅ <strong>Active flights only</strong> - Currently in the air</li>
+                        <li>✅ <strong>Position data</strong> - Latitude, longitude, altitude, speed, heading</li>
+                      </ul>
+                    </div>
+                    
+                    <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-3 mb-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Plane size={16} className="text-blue-600 dark:text-blue-400" />
+                        <span className="text-sm font-semibold text-blue-800 dark:text-blue-300">
+                          AviationStack (Enhancement)
+                        </span>
+                      </div>
+                      <ul className="m-0 pl-5 text-xs text-blue-900 dark:text-blue-200 space-y-1">
+                        <li>Used to enhance OpenSky data with route information</li>
+                        <li>Free tier: 100 requests/month</li>
+                        <li>Provides: Airport names, terminals, gates, scheduled times</li>
+                      </ul>
+                    </div>
+                    
+                    <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-200 dark:border-yellow-700 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertCircle size={16} className="text-yellow-600 dark:text-yellow-400" />
+                        <span className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                          Limitations
+                        </span>
+                      </div>
+                      <ul className="m-0 pl-5 text-xs text-yellow-900 dark:text-yellow-200 space-y-1">
+                        <li>OpenSky: Only shows flights currently in the air (no scheduled flights)</li>
+                        <li>OpenSky: No historical data or route information</li>
+                        <li>Some airport/route information may be estimated based on airline and position</li>
+                      </ul>
                     </div>
                   </div>
                 )}
@@ -734,9 +749,17 @@ const Flights = () => {
 
                   {/* Route Information */}
                   <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-5">
-                      Route Information
-                    </h2>
+                    <div className="flex items-center justify-between mb-5">
+                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white m-0">
+                        Route Information
+                      </h2>
+                      {flightData.routeEstimated && (
+                        <span className="text-xs px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded border border-yellow-300 dark:border-yellow-700">
+                          <AlertCircle size={12} className="inline mr-1" />
+                          Estimated Route
+                        </span>
+                      )}
+                    </div>
 
                     {/* Departure */}
                     <div className="mb-6">
@@ -746,8 +769,13 @@ const Flights = () => {
                       </div>
                       
                       <div className="ml-4">
-                        <div className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                          {flightData.departure.airport}
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {flightData.departure.airport}
+                          </div>
+                          {flightData.departure.isEstimated && (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400">(Est.)</span>
+                          )}
                         </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                           {flightData.departure.iata}
@@ -808,8 +836,13 @@ const Flights = () => {
                       </div>
                       
                       <div className="ml-4">
-                        <div className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
-                          {flightData.arrival.airport}
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {flightData.arrival.airport}
+                          </div>
+                          {flightData.arrival.isEstimated && (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400">(Est.)</span>
+                          )}
                         </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                           {flightData.arrival.iata}

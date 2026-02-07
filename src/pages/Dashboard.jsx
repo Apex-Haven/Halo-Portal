@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Truck, Clock, CheckCircle, Users, Plane, TrendingUp, Plus, UserPlus, BarChart3, Calendar, Building2 } from 'lucide-react'
+import { Truck, Clock, CheckCircle, Users, Plane, TrendingUp, Plus, UserPlus, BarChart3, Calendar, Building2, UserCheck, Briefcase } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import AIInsightsCard from '../components/AIInsightsCard'
@@ -8,6 +8,12 @@ import { getTransferDisplayName } from '../utils/transferUtils'
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null)
+  const [userStats, setUserStats] = useState({
+    clients: 0,
+    vendors: 0,
+    drivers: 0,
+    travelers: 0
+  })
   const [recentTransfers, setRecentTransfers] = useState([])
   const [todayOverview, setTodayOverview] = useState({
     flightsArriving: 0,
@@ -17,6 +23,7 @@ const Dashboard = () => {
     hotelBookings: 0
   })
   const [loading, setLoading] = useState(true)
+  const [userStatsLoading, setUserStatsLoading] = useState(true)
   const [todayLoading, setTodayLoading] = useState(true)
   const { user, can, isRole } = useAuth()
   const navigate = useNavigate()
@@ -34,6 +41,7 @@ const Dashboard = () => {
     // Only fetch data if user is admin
     if (user && (isRole('SUPER_ADMIN') || isRole('ADMIN'))) {
     fetchDashboardData()
+    fetchUserStats()
     fetchTodayOverview()
     }
   }, [user, isRole])
@@ -69,6 +77,33 @@ const Dashboard = () => {
       console.error('Error fetching dashboard data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchUserStats = async () => {
+    try {
+      setUserStatsLoading(true)
+      
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+      const token = localStorage.getItem('token');
+      
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/users/stats`, { headers }).then(res => res.json())
+
+      if (response.success) {
+        setUserStats(response.data)
+      }
+    } catch (error) {
+      console.error('Error fetching user stats:', error)
+    } finally {
+      setUserStatsLoading(false)
     }
   }
 
@@ -219,6 +254,75 @@ const Dashboard = () => {
           <div className="text-muted-foreground text-sm">from last period</div>
         </div>
       </div>
+
+      {/* User Stats Grid */}
+      {(isRole('SUPER_ADMIN') || isRole('ADMIN')) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div 
+            onClick={() => navigate('/user-management')}
+            className="bg-card p-6 rounded-xl shadow-sm border border-border cursor-pointer transition-all hover:shadow-md hover:bg-muted/30"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 rounded-lg bg-blue-500/10">
+                <Briefcase size={24} className="text-blue-600 dark:text-blue-400" />
+              </div>
+            </div>
+            <h3 className="text-muted-foreground text-sm mb-2">Clients</h3>
+            <div className="text-3xl font-bold text-foreground">
+              {userStatsLoading ? '...' : userStats.clients}
+            </div>
+            <div className="text-muted-foreground text-sm">Total clients</div>
+          </div>
+          
+          <div 
+            onClick={() => navigate('/user-management')}
+            className="bg-card p-6 rounded-xl shadow-sm border border-border cursor-pointer transition-all hover:shadow-md hover:bg-muted/30"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 rounded-lg bg-purple-500/10">
+                <Building2 size={24} className="text-purple-600 dark:text-purple-400" />
+              </div>
+            </div>
+            <h3 className="text-muted-foreground text-sm mb-2">Vendors</h3>
+            <div className="text-3xl font-bold text-foreground">
+              {userStatsLoading ? '...' : userStats.vendors}
+            </div>
+            <div className="text-muted-foreground text-sm">Total vendors</div>
+          </div>
+          
+          <div 
+            onClick={() => navigate('/drivers')}
+            className="bg-card p-6 rounded-xl shadow-sm border border-border cursor-pointer transition-all hover:shadow-md hover:bg-muted/30"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 rounded-lg bg-green-500/10">
+                <Truck size={24} className="text-green-600 dark:text-green-400" />
+              </div>
+            </div>
+            <h3 className="text-muted-foreground text-sm mb-2">Drivers</h3>
+            <div className="text-3xl font-bold text-foreground">
+              {userStatsLoading ? '...' : userStats.drivers}
+            </div>
+            <div className="text-muted-foreground text-sm">Total drivers</div>
+          </div>
+          
+          <div 
+            onClick={() => navigate('/travelers')}
+            className="bg-card p-6 rounded-xl shadow-sm border border-border cursor-pointer transition-all hover:shadow-md hover:bg-muted/30"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 rounded-lg bg-orange-500/10">
+                <UserCheck size={24} className="text-orange-600 dark:text-orange-400" />
+              </div>
+            </div>
+            <h3 className="text-muted-foreground text-sm mb-2">Travelers</h3>
+            <div className="text-3xl font-bold text-foreground">
+              {userStatsLoading ? '...' : userStats.travelers}
+            </div>
+            <div className="text-muted-foreground text-sm">Total travelers</div>
+          </div>
+        </div>
+      )}
 
       {/* Today's Overview Section */}
       {(isRole('SUPER_ADMIN') || isRole('ADMIN')) && (

@@ -37,7 +37,14 @@ const LoginPage = () => {
       // Extract better error message
       let errorMessage = 'Login failed'
       
-      if (err.response?.data) {
+      // Handle network errors specifically
+      if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+        errorMessage = 'Connection timeout. Please check if the backend server is running on port 7007.'
+      } else if (err.code === 'ERR_NETWORK' || err.message.includes('Network Error')) {
+        errorMessage = 'Network error. Please ensure the backend server is running at http://localhost:7007'
+      } else if (err.code === 'ERR_CONNECTION_REFUSED') {
+        errorMessage = 'Cannot connect to server. Please ensure the backend is running on port 7007.'
+      } else if (err.response?.data) {
         if (err.response.data.message) {
           errorMessage = err.response.data.message
         } else if (err.response.data.error) {
@@ -55,6 +62,12 @@ const LoginPage = () => {
       } else if (err.message) {
         errorMessage = err.message
       }
+      
+      console.error('Login error details:', {
+        code: err.code,
+        message: err.message,
+        response: err.response?.data
+      });
       
       toast.error(errorMessage)
     } finally {

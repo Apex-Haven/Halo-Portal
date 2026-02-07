@@ -89,6 +89,33 @@ export const flightTrackingService = {
     }
   },
 
+  // Get flights by region (bounding box)
+  async getFlightsByRegion(lamin, lomin, lamax, lomax) {
+    try {
+      const params = new URLSearchParams({
+        lamin: lamin.toString(),
+        lomin: lomin.toString(),
+        lamax: lamax.toString(),
+        lomax: lomax.toString()
+      });
+      
+      const response = await fetch(`${API_BASE_URL}/flight-tracking/region?${params}`, {
+        method: 'GET',
+        headers: getHeaders()
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching flights by region:', error);
+      throw error;
+    }
+  },
+
   // Format flight data for display
   formatFlightData(flightData) {
     if (!flightData) return null;

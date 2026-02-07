@@ -517,7 +517,17 @@ const TransferForm = ({ onClose, onSuccess }) => {
         setCreatedTransferId(transferId);
         // Don't close immediately - show success step with APEX ID
       } else {
-        toast.error(data.message || 'Failed to create transfer');
+        // Show detailed error message
+        let errorMessage = data.message || 'Failed to create transfer';
+        
+        // If there are validation errors, show them
+        if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+          const errorDetails = data.errors.map(e => `${e.field}: ${e.message}`).join(', ');
+          errorMessage = `Validation error: ${errorDetails}`;
+        }
+        
+        toast.error(errorMessage);
+        console.error('Transfer creation failed:', data);
       }
     } catch (error) {
       console.error('Error creating transfer:', error);
@@ -977,7 +987,7 @@ const TransferForm = ({ onClose, onSuccess }) => {
                         <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg flex items-start gap-2">
                           <span className="text-blue-500 text-lg">ℹ️</span>
                           <div className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">
-                            <strong>Driver Assignment:</strong> The vendor can assign a driver after logging in to their portal.
+                            <strong>Note:</strong> Driver assignment is optional. The vendor can assign a driver after the transfer is created.
                           </div>
                         </div>
                       </div>

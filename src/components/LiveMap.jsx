@@ -245,7 +245,7 @@ const LiveMap = ({ transfer, driverLocation, estimatedArrival, routeHistory }) =
 
   // Initialize icons after map loads
   useEffect(() => {
-    if (window.google?.maps) {
+    if (window.google?.maps?.SymbolPath) {
       setDriverIcon({
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 10,
@@ -411,7 +411,7 @@ const LiveMap = ({ transfer, driverLocation, estimatedArrival, routeHistory }) =
                 strokeWeight: segment.completed || segment.isCurrentLocation ? 4 : 3,
                 geodesic: true,
                 zIndex: segment.completed ? 2 : 1,
-                icons: window.google?.maps ? [{
+                icons: (window.google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW) ? [{
                   icon: {
                     path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
                     scale: segment.completed ? 5 : 3,

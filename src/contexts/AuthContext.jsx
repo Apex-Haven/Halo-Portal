@@ -258,9 +258,16 @@ export const AuthProvider = ({ children }) => {
       
       // Real API authentication
       const API_BASE_URL = getApiBaseUrl();
+      console.log('🔐 Attempting login to:', `${API_BASE_URL}/auth/login`);
+      
       const response = await axios.post(`${API_BASE_URL}/auth/login`, {
         email,
         password
+      }, {
+        timeout: 10000, // 10 second timeout
+        headers: {
+          'Content-Type': 'application/json'
+        }
       })
       
       if (response.data.success) {
@@ -277,7 +284,29 @@ export const AuthProvider = ({ children }) => {
         throw new Error(response.data.message || 'Login failed')
       }
     } catch (error) {
-      const message = error.response?.data?.message || error.message || 'Login failed'
+      let message = 'Login failed';
+      
+      // Handle network errors
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        message = 'Connection timeout. Please check if the backend server is running on port 7007.';
+      } else if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+        message = 'Network error. Please ensure the backend server is running at http://localhost:7007';
+      } else if (error.code === 'ERR_CONNECTION_REFUSED') {
+        message = 'Cannot connect to server. Please ensure the backend is running on port 7007.';
+      } else if (error.response?.data) {
+        // Server responded with error
+        message = error.response.data.message || error.response.data.error || 'Login failed';
+      } else if (error.message) {
+        message = error.message;
+      }
+      
+      console.error('Login error:', {
+        code: error.code,
+        message: error.message,
+        response: error.response?.data,
+        url: `${getApiBaseUrl()}/auth/login`
+      });
+      
       dispatch({
         type: AUTH_ACTIONS.LOGIN_FAILURE,
         payload: message

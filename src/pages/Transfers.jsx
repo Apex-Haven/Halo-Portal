@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, Plus, Eye, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, UserPlus, FileEdit, AlertCircle, User } from 'lucide-react'
+import { Search, Filter, Plus, Eye, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, UserPlus, FileEdit, AlertCircle, User, Clock } from 'lucide-react'
 import TransferForm from '../components/TransferForm'
 import TransferDetailsModal from '../components/TransferDetailsModal'
 import TransferEditModal from '../components/TransferEditModal'
@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { getTransferDisplayName } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames } from '../utils/transferUtils'
 
 const Transfers = () => {
   const { user, isRole } = useAuth()
@@ -465,32 +465,45 @@ const Transfers = () => {
         ) : filteredTransfers.length > 0 ? (
           <div className="w-full">
             {/* Table Header */}
-            <div className="grid grid-cols-[100px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,150px)_90px_auto] gap-2 px-4 py-4 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <div className="grid grid-cols-[100px_minmax(150px,1.2fr)_minmax(150px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(100px,1fr)_90px_auto] gap-2 px-4 py-4 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               <div>ID</div>
-              <div>Customer</div>
+              <div>Customer / Traveler</div>
               <div>Flight</div>
-              <div>Vendor</div>
+              <div>Vendor / Driver</div>
+              <div>Pickup / Drop</div>
+              <div>Time</div>
               <div>Status</div>
               <div className="text-right">Actions</div>
             </div>
 
             {/* Table Rows */}
-            {filteredTransfers.map((transfer) => (
+            {filteredTransfers.map((transfer) => {
+              const { clientName, travelerName } = getClientAndTravelerNames(transfer)
+              return (
               <div
                 key={transfer._id}
-                className="grid grid-cols-[100px_minmax(150px,1fr)_minmax(150px,1fr)_minmax(120px,150px)_90px_auto] gap-2 px-4 py-3 border-b border-border items-center text-sm transition-colors hover:bg-muted/30"
+                className="grid grid-cols-[100px_minmax(150px,1.2fr)_minmax(150px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(100px,1fr)_90px_auto] gap-2 px-4 py-3 border-b border-border items-center text-sm transition-colors hover:bg-muted/30"
               >
                 <div className="font-semibold text-foreground text-xs">
-                  {getTransferDisplayName(transfer)}
+                  {transfer._id?.substring(0, 8) || 'N/A'}
                 </div>
                 
-                <div className="overflow-hidden text-ellipsis">
+                <div className="overflow-hidden">
                   <div className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis">
-                    {transfer.customer_details?.name || 'N/A'}
+                    {clientName}
                   </div>
-                  <div className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis">
-                    {transfer.customer_details?.email || ''}
-                  </div>
+                  {travelerName ? (
+                    <div className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+                      Traveler: {travelerName}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground italic">No traveler</div>
+                  )}
+                  {transfer.customer_details?.email && (
+                    <div className="text-[11px] text-muted-foreground/70 whitespace-nowrap overflow-hidden text-ellipsis">
+                      {transfer.customer_details.email}
+                    </div>
+                  )}
                 </div>
                 
                 <div>
@@ -511,9 +524,6 @@ const Transfers = () => {
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {transfer.flight_details?.airline || ''}
-                    {(transfer.flight_details?.arrival_time || transfer.flight_details?.scheduled_arrival) && (
-                      <> • {new Date(transfer.flight_details.arrival_time || transfer.flight_details.scheduled_arrival).toLocaleDateString()}</>
-                    )}
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
                     <MapPin size={12} />
@@ -525,17 +535,89 @@ const Transfers = () => {
 
                 <div className="overflow-hidden">
                   {transfer.vendor_details ? (
-                    <div
-                      onClick={() => navigate(`/vendors?search=${transfer.vendor_details.vendor_id}`)}
-                      className="cursor-pointer flex items-center gap-1 overflow-hidden"
-                    >
-                      <Truck size={14} className="text-primary" />
-                      <span className="font-medium text-primary underline whitespace-nowrap overflow-hidden text-ellipsis">
-                        {transfer.vendor_details.vendor_name || transfer.vendor_details.vendor_id || 'N/A'}
-                      </span>
+                    <div className="space-y-1">
+                      <div
+                        onClick={() => navigate(`/vendors?search=${transfer.vendor_details.vendor_id}`)}
+                        className="cursor-pointer flex items-center gap-1 overflow-hidden"
+                      >
+                        <Truck size={14} className="text-primary" />
+                        <span className="font-medium text-primary underline whitespace-nowrap overflow-hidden text-ellipsis text-xs">
+                          {transfer.vendor_details.vendor_name || transfer.vendor_details.vendor_id || 'N/A'}
+                        </span>
+                      </div>
+                      {transfer.assigned_driver_details && (
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          <User size={12} />
+                          <span className="whitespace-nowrap overflow-hidden text-ellipsis">
+                            {transfer.assigned_driver_details.name || transfer.assigned_driver_details.driver_name || 'Driver assigned'}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <span className="text-muted-foreground text-xs">No vendor</span>
+                  )}
+                </div>
+
+                <div className="overflow-hidden">
+                  {transfer.transfer_details?.pickup_location && (
+                    <div className="text-xs">
+                      <div className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-1">
+                        <MapPin size={12} />
+                        <span>Pickup</span>
+                      </div>
+                      <div className="text-muted-foreground mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
+                        {transfer.transfer_details.pickup_location}
+                      </div>
+                    </div>
+                  )}
+                  {transfer.transfer_details?.drop_location && (
+                    <div className="text-xs mt-1">
+                      <div className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-1">
+                        <MapPin size={12} />
+                        <span>Drop</span>
+                      </div>
+                      <div className="text-muted-foreground mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
+                        {transfer.transfer_details.drop_location}
+                      </div>
+                    </div>
+                  )}
+                  {!transfer.transfer_details?.pickup_location && !transfer.transfer_details?.drop_location && (
+                    <span className="text-muted-foreground text-xs">-</span>
+                  )}
+                </div>
+
+                <div className="overflow-hidden">
+                  {transfer.transfer_details?.estimated_pickup_time && (
+                    <div className="text-xs">
+                      <div className="font-medium text-foreground flex items-center gap-1">
+                        <Clock size={12} />
+                        <span>Pickup</span>
+                      </div>
+                      <div className="text-muted-foreground mt-0.5">
+                        {new Date(transfer.transfer_details.estimated_pickup_time).toLocaleDateString()}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {new Date(transfer.transfer_details.estimated_pickup_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  )}
+                  {transfer.flight_details?.arrival_time && (
+                    <div className="text-xs mt-1">
+                      <div className="font-medium text-foreground flex items-center gap-1">
+                        <Plane size={12} />
+                        <span>Arrival</span>
+                      </div>
+                      <div className="text-muted-foreground mt-0.5">
+                        {new Date(transfer.flight_details.arrival_time).toLocaleDateString()}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {new Date(transfer.flight_details.arrival_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  )}
+                  {!transfer.transfer_details?.estimated_pickup_time && !transfer.flight_details?.arrival_time && (
+                    <span className="text-muted-foreground text-xs">-</span>
                   )}
                 </div>
                 
@@ -626,7 +708,8 @@ const Transfers = () => {
                   )}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div className="p-12 text-center">

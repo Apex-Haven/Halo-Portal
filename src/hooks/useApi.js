@@ -80,12 +80,19 @@ export const useApi = () => {
       setLoading(true)
       setError(null)
       
-      const response = await api.request({
+      // For DELETE requests with data, ensure data is sent in body
+      const requestConfig = {
         method,
         url,
-        data,
         ...config
-      })
+      }
+      
+      // DELETE requests can have a body, but axios needs it explicitly
+      if (data && (method === 'DELETE' || method === 'PATCH' || method === 'PUT' || method === 'POST')) {
+        requestConfig.data = data
+      }
+      
+      const response = await api.request(requestConfig)
       
       return response
     } catch (err) {
