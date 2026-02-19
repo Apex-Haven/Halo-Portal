@@ -143,3 +143,121 @@
     @apply text-foreground;
   }
 }
+
+/* React-datepicker: dropdown above drawer + theme colours (light/dark) */
+.halo-datepicker-popper {
+  z-index: 1100 !important;
+}
+
+.halo-datepicker-calendar,
+.halo-datepicker-popper .react-datepicker {
+  --rdp-bg: hsl(var(--card));
+  --rdp-fg: hsl(var(--card-foreground));
+  --rdp-border: hsl(var(--border));
+  --rdp-muted: hsl(var(--muted));
+  --rdp-muted-fg: hsl(var(--muted-foreground));
+  --rdp-accent: hsl(var(--accent));
+  --rdp-accent-fg: hsl(var(--accent-foreground));
+  --rdp-primary: hsl(var(--primary));
+  --rdp-primary-fg: hsl(var(--primary-foreground));
+  background: var(--rdp-bg) !important;
+  color: var(--rdp-fg) !important;
+  border: 1px solid var(--rdp-border) !important;
+  font-family: inherit;
+}
+
+.halo-datepicker-calendar .react-datepicker__header,
+.halo-datepicker-popper .react-datepicker__header {
+  background: var(--rdp-muted) !important;
+  border-color: var(--rdp-border) !important;
+  padding-top: 0.5rem;
+}
+
+.halo-datepicker-calendar .react-datepicker__current-month,
+.halo-datepicker-calendar .react-datepicker__day-name,
+.halo-datepicker-popper .react-datepicker__current-month,
+.halo-datepicker-popper .react-datepicker__day-name {
+  color: var(--rdp-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__day,
+.halo-datepicker-popper .react-datepicker__day {
+  color: var(--rdp-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__day:hover,
+.halo-datepicker-calendar .react-datepicker__day--keyboard-selected,
+.halo-datepicker-popper .react-datepicker__day:hover,
+.halo-datepicker-popper .react-datepicker__day--keyboard-selected {
+  background: var(--rdp-accent) !important;
+  color: var(--rdp-accent-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__day--selected,
+.halo-datepicker-calendar .react-datepicker__day--in-selecting-range,
+.halo-datepicker-popper .react-datepicker__day--selected,
+.halo-datepicker-popper .react-datepicker__day--in-selecting-range {
+  background: var(--rdp-primary) !important;
+  color: var(--rdp-primary-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__day--disabled,
+.halo-datepicker-calendar .react-datepicker__day--outside-month,
+.halo-datepicker-popper .react-datepicker__day--disabled,
+.halo-datepicker-popper .react-datepicker__day--outside-month {
+  color: var(--rdp-muted-fg) !important;
+  opacity: 0.6;
+}
+
+.halo-datepicker-calendar .react-datepicker__time-container,
+.halo-datepicker-popper .react-datepicker__time-container {
+  border-left-color: var(--rdp-border) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker-time__header,
+.halo-datepicker-popper .react-datepicker-time__header {
+  color: var(--rdp-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__time-box,
+.halo-datepicker-popper .react-datepicker__time-box {
+  background: var(--rdp-bg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__time-list-item,
+.halo-datepicker-popper .react-datepicker__time-list-item {
+  color: var(--rdp-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__time-list-item:hover,
+.halo-datepicker-popper .react-datepicker__time-list-item:hover {
+  background: var(--rdp-accent) !important;
+  color: var(--rdp-accent-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__time-list-item--selected,
+.halo-datepicker-popper .react-datepicker__time-list-item--selected {
+  background: var(--rdp-primary) !important;
+  color: var(--rdp-primary-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__time-list-item--disabled,
+.halo-datepicker-popper .react-datepicker__time-list-item--disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+  color: var(--rdp-muted-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__navigation-icon::before,
+.halo-datepicker-popper .react-datepicker__navigation-icon::before {
+  border-color: var(--rdp-muted-fg) !important;
+}
+
+.halo-datepicker-calendar .react-datepicker__triangle::before,
+.halo-datepicker-calendar .react-datepicker__triangle::after,
+.halo-datepicker-popper .react-datepicker__triangle::before,
+.halo-datepicker-popper .react-datepicker__triangle::after {
+  border-bottom-color: var(--rdp-border) !important;
+  border-top-color: var(--rdp-border) !important;
+}

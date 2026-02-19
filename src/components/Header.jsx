@@ -1,17 +1,45 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, Bell, User, ChevronDown, Settings, LogOut, Zap, Moon, Sun } from 'lucide-react'
+import { Menu, Bell, User, ChevronDown, Settings, LogOut, Zap, Moon, Sun, Truck, UserPlus, FileText } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { inAppNotificationApi } from '../services/notificationService'
 
 const Header = ({ onMenuClick }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notifications, setNotifications] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [notifLoading, setNotifLoading] = useState(false)
   const { user, logout, can } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
   const userMenuRef = useRef(null)
+  const notifRef = useRef(null)
+
+  // Fetch unread count when user is present
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0)
+      return
+    }
+    inAppNotificationApi.getUnreadCount().then(setUnreadCount).catch(() => setUnreadCount(0))
+  }, [user])
+
+  // When notification dropdown opens, fetch list
+  useEffect(() => {
+    if (!notifOpen || !user) return
+    setNotifLoading(true)
+    inAppNotificationApi.getList({ limit: 20 })
+      .then((data) => {
+        setNotifications(data.notifications || [])
+        setUnreadCount(data.unreadCount ?? 0)
+      })
+      .catch(() => setNotifications([]))
+      .finally(() => setNotifLoading(false))
+  }, [notifOpen, user])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -19,16 +47,19 @@ const Header = ({ onMenuClick }) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setUserMenuOpen(false)
       }
+      if (notifRef.current && !notifRef.current.contains(event.target)) {
+        setNotifOpen(false)
+      }
     }
 
-    if (userMenuOpen) {
+    if (userMenuOpen || notifOpen) {
       document.addEventListener('mousedown', handleClickOutside)
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [userMenuOpen])
+  }, [userMenuOpen, notifOpen])
 
   const handleLogout = async () => {
     setUserMenuOpen(false) // Close the menu first
@@ -50,6 +81,48 @@ const Header = ({ onMenuClick }) => {
   const handleSettingsClick = () => {
     navigate('/settings')
     setUserMenuOpen(false)
+  }
+
+  const handleNotificationClick = (n) => {
+    const transferId = n.transfer_id
+    const action = n.metadata?.action || 'view'
+    inAppNotificationApi.markRead(n._id).then(() => {
+      setUnreadCount((c) => Math.max(0, c - 1))
+      setNotifications((prev) => prev.map((x) => (x._id === n._id ? { ...x, read: true } : x)))
+    }).catch(() => {})
+    setNotifOpen(false)
+    navigate(`/transfers?transferId=${encodeURIComponent(transferId)}&notificationAction=${encodeURIComponent(action)}`)
+  }
+
+  const handleMarkAllRead = () => {
+    inAppNotificationApi.markAllRead().then(() => {
+      setUnreadCount(0)
+      setNotifications((prev) => prev.map((x) => ({ ...x, read: true })))
+    }).catch(() => {})
+  }
+
+  const formatNotifTime = (dateStr) => {
+    if (!dateStr) return ''
+    const d = new Date(dateStr)
+    const now = new Date()
+    const diffMs = now - d
+    const diffMins = Math.floor(diffMs / 60000)
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    const diffHours = Math.floor(diffMins / 60)
+    if (diffHours < 24) return `${diffHours}h ago`
+    const diffDays = Math.floor(diffHours / 24)
+    if (diffDays < 7) return `${diffDays}d ago`
+    return d.toLocaleDateString()
+  }
+
+  const getNotifIcon = (type) => {
+    switch (type) {
+      case 'transfer_created': return <FileText size={16} className="text-primary" />
+      case 'vendor_assigned': return <Truck size={16} className="text-primary" />
+      case 'driver_assigned': return <UserPlus size={16} className="text-primary" />
+      default: return <Bell size={16} className="text-muted-foreground" />
+    }
   }
 
   return (
@@ -94,15 +167,64 @@ const Header = ({ onMenuClick }) => {
           )}
         </button>
 
-        {/* Notifications */}
-        <div className="relative">
-          <button className="p-2 rounded-md border-none bg-transparent cursor-pointer hover:bg-accent transition-colors relative">
-            <Bell size={20} className="text-muted-foreground" />
-            <span className="absolute top-1 right-1 bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-4 text-center">
-              3
-            </span>
-          </button>
-        </div>
+        {/* Notifications - only when logged in */}
+        {user && (
+          <div ref={notifRef} className="relative">
+            <button
+              onClick={() => setNotifOpen(!notifOpen)}
+              className="p-2 rounded-md border-none bg-transparent cursor-pointer hover:bg-accent transition-colors relative"
+              aria-label="Notifications"
+            >
+              <Bell size={20} className="text-muted-foreground" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 bg-destructive text-destructive-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-4 text-center">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <div className="absolute top-full right-0 mt-2 w-[320px] max-h-[400px] overflow-hidden bg-popover border border-border rounded-lg shadow-lg z-50 flex flex-col">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                  <span className="text-sm font-semibold text-foreground">Notifications</span>
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllRead}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-y-auto max-h-[320px]">
+                  {notifLoading ? (
+                    <div className="p-4 text-center text-sm text-muted-foreground">Loading...</div>
+                  ) : notifications.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-muted-foreground">No notifications</div>
+                  ) : (
+                    notifications.map((n) => (
+                      <button
+                        key={n._id}
+                        type="button"
+                        onClick={() => handleNotificationClick(n)}
+                        className={`w-full text-left px-3 py-2.5 flex gap-2 border-none cursor-pointer transition-colors hover:bg-accent ${!n.read ? 'bg-primary/5' : ''}`}
+                      >
+                        <div className="flex-shrink-0 mt-0.5">{getNotifIcon(n.type)}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-foreground truncate">{n.title}</div>
+                          {n.message && (
+                            <div className="text-xs text-muted-foreground truncate mt-0.5">{n.message}</div>
+                          )}
+                          <div className="text-[10px] text-muted-foreground/80 mt-1">{formatNotifTime(n.created_at)}</div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* User Menu or Login Button */}
         {user ? (

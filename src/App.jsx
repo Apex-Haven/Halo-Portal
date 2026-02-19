@@ -1,7 +1,9 @@
-import { Routes, Route } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Routes, Route, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { FeaturesProvider } from './contexts/FeaturesContext'
 import LoginPage from './pages/LoginPage'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
@@ -18,6 +20,31 @@ import Drivers from './pages/Drivers'
 import TravelAdvisory from './pages/TravelAdvisory'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
+import { useFeatures, FEATURE_KEYS } from './contexts/FeaturesContext'
+
+const TravelAdvisoryRoute = () => {
+  const navigate = useNavigate()
+  const { isFeatureEnabled } = useFeatures()
+  useEffect(() => {
+    if (!isFeatureEnabled(FEATURE_KEYS.HOTELS_ADVISORY)) {
+      navigate('/transfers', { replace: true })
+    }
+  }, [isFeatureEnabled, navigate])
+  if (!isFeatureEnabled(FEATURE_KEYS.HOTELS_ADVISORY)) return null
+  return <TravelAdvisory />
+}
+
+const FlightsRoute = () => {
+  const navigate = useNavigate()
+  const { isFeatureEnabled } = useFeatures()
+  useEffect(() => {
+    if (!isFeatureEnabled(FEATURE_KEYS.FLIGHTS)) {
+      navigate('/transfers', { replace: true })
+    }
+  }, [isFeatureEnabled, navigate])
+  if (!isFeatureEnabled(FEATURE_KEYS.FLIGHTS)) return null
+  return <Flights />
+}
 
 // Protected App Component
 const ProtectedApp = () => {
@@ -78,7 +105,7 @@ const ProtectedApp = () => {
             } />
             <Route path="/flights" element={
               <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN', 'CLIENT', 'TRAVELER']} redirectTo="/transfers">
-                <Flights />
+                <FlightsRoute />
               </ProtectedRoute>
             } />
             
@@ -90,7 +117,7 @@ const ProtectedApp = () => {
             } />
             <Route path="/travel-advisory" element={
               <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER']} redirectTo="/transfers">
-                <TravelAdvisory />
+                <TravelAdvisoryRoute />
               </ProtectedRoute>
             } />
             
@@ -109,6 +136,7 @@ const ProtectedApp = () => {
 function App() {
   return (
     <ThemeProvider>
+      <FeaturesProvider>
       <AuthProvider>
         <Routes>
           {/* Public tracking route - accessible without authentication but with layout */}
@@ -130,6 +158,7 @@ function App() {
           <Route path="*" element={<ProtectedApp />} />
         </Routes>
       </AuthProvider>
+      </FeaturesProvider>
     </ThemeProvider>
   )
 }

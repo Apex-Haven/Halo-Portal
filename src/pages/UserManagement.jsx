@@ -239,7 +239,6 @@ const UserManagement = () => {
         setUserToDelete(null)
         fetchUsers()
         fetchVendors()
-        fetchClients()
       }
     } catch (error) {
       toast.error(error.response?.data?.message || error.message || 'Failed to delete user')

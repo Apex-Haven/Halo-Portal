@@ -44,8 +44,11 @@ const Dropdown = ({
 
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside)
-      // Also close on scroll to prevent misalignment
-      const handleScroll = () => setIsOpen(false)
+      // Close on scroll only when scroll is outside the dropdown menu (so menu scroll works)
+      const handleScroll = (e) => {
+        if (menuRef.current && menuRef.current.contains(e.target)) return
+        setIsOpen(false)
+      }
       window.addEventListener('scroll', handleScroll, true)
       
       return () => {

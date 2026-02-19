@@ -44,4 +44,25 @@ export const notificationService = {
   }
 }
 
+// In-app notifications (bell icon in header)
+export const inAppNotificationApi = {
+  async getList(params = {}) {
+    const q = new URLSearchParams(params).toString()
+    const res = await api.get(`/in-app-notifications${q ? `?${q}` : ''}`)
+    return res?.data ?? { notifications: [], total: 0, unreadCount: 0 }
+  },
+  async getUnreadCount() {
+    const res = await api.get('/in-app-notifications/unread-count')
+    return res?.data?.count ?? 0
+  },
+  async markRead(id) {
+    const res = await api.patch(`/in-app-notifications/${id}/read`)
+    return res
+  },
+  async markAllRead() {
+    const res = await api.patch('/in-app-notifications/read-all')
+    return res
+  }
+}
+
 export default notificationService

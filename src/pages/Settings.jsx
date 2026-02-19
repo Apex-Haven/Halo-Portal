@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import { Settings as SettingsIcon, User, Bell, Shield, Database, Mail, Phone } from 'lucide-react'
-import { useTheme } from '../contexts/ThemeContext'
+import { Settings as SettingsIcon, Bell, Shield, Database, ToggleLeft } from 'lucide-react'
+import { useFeatures, FEATURE_KEYS, FEATURE_LABELS } from '../contexts/FeaturesContext'
 import Dropdown from '../components/Dropdown'
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('general')
+  const { isFeatureEnabled, setFeatureEnabled } = useFeatures()
 
   const tabs = [
     { id: 'general', label: 'General', icon: SettingsIcon },
+    { id: 'features', label: 'Features', icon: ToggleLeft },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'integrations', label: 'Integrations', icon: Database }
@@ -48,6 +50,63 @@ const Settings = () => {
 
         {/* Content */}
         <div className="flex-1">
+          {activeTab === 'features' && (
+            <div className="bg-card rounded-xl shadow-sm border border-border p-6">
+              <h2 className="text-xl font-semibold text-foreground mb-2">
+                Features
+              </h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Enable or disable app features. Changes apply immediately.
+              </p>
+              <div className="flex flex-col gap-4">
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg border border-border bg-muted/30 dark:bg-muted/20">
+                  <div>
+                    <div className="text-sm font-medium text-foreground">
+                      {FEATURE_LABELS[FEATURE_KEYS.HOTELS_ADVISORY]}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Travel advisory and hotel recommendations (sidebar and route)
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center cursor-pointer shrink-0 gap-3">
+                    <input
+                      type="checkbox"
+                      checked={isFeatureEnabled(FEATURE_KEYS.HOTELS_ADVISORY)}
+                      onChange={(e) => setFeatureEnabled(FEATURE_KEYS.HOTELS_ADVISORY, e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <span className="relative inline-block w-11 h-6 shrink-0 rounded-full border border-border bg-muted transition-colors dark:bg-muted/80 peer-checked:bg-primary peer-checked:border-primary peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-border after:bg-background after:shadow-sm after:transition-[transform] after:content-[''] peer-checked:after:translate-x-5 peer-checked:after:border-0 dark:after:bg-background" />
+                    <span className="text-sm font-medium text-foreground">
+                      {isFeatureEnabled(FEATURE_KEYS.HOTELS_ADVISORY) ? 'On' : 'Off'}
+                    </span>
+                  </label>
+                </div>
+                <div className="flex justify-between items-center py-3 px-4 rounded-lg border border-border bg-muted/30 dark:bg-muted/20">
+                  <div>
+                    <div className="text-sm font-medium text-foreground">
+                      {FEATURE_LABELS[FEATURE_KEYS.FLIGHTS]}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Flights list and flight status (sidebar and route)
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center cursor-pointer shrink-0 gap-3">
+                    <input
+                      type="checkbox"
+                      checked={isFeatureEnabled(FEATURE_KEYS.FLIGHTS)}
+                      onChange={(e) => setFeatureEnabled(FEATURE_KEYS.FLIGHTS, e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <span className="relative inline-block w-11 h-6 shrink-0 rounded-full border border-border bg-muted transition-colors dark:bg-muted/80 peer-checked:bg-primary peer-checked:border-primary peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-border after:bg-background after:shadow-sm after:transition-[transform] after:content-[''] peer-checked:after:translate-x-5 peer-checked:after:border-0 dark:after:bg-background" />
+                    <span className="text-sm font-medium text-foreground">
+                      {isFeatureEnabled(FEATURE_KEYS.FLIGHTS) ? 'On' : 'Off'}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'general' && (
             <div className="bg-card rounded-xl shadow-sm border border-border p-6">
               <h2 className="text-xl font-semibold text-foreground mb-6">

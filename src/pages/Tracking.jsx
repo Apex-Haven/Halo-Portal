@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapPin, Clock, User, Car, Phone, Navigation, CheckCircle, Circle, AlertCircle, Plane, Users, FileText, Truck, ChevronDown } from 'lucide-react';
+import { MapPin, Clock, User, Car, Phone, Navigation, CheckCircle, Circle, AlertCircle, Plane, Users, FileText, Truck, ChevronDown, Building2 } from 'lucide-react';
 import LiveMap from '../components/LiveMap';
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
@@ -41,18 +41,43 @@ const Tracking = () => {
     }
   }, [trackingId]);
 
-  // Mock tracking steps for demonstration
+  // Build tracking steps from transfer state (aligned with completion flow: Traveler → Flight → Vendor → Driver → En route → Pickup → Drop → Completed)
+  const buildTrackingStepsFromTransfer = (t) => {
+    if (!t) return [];
+    const hasTraveler = !!(t.traveler_details || t.traveler_id);
+    const hasFlight = !!(t.flight_details?.flight_no && t.flight_details.flight_no !== 'XX000' && t.flight_details.flight_no !== 'TBD');
+    const hasVendor = !!(t.vendor_details?.vendor_id || t.vendor_details?.vendor_name);
+    const hasDriver = !!t.assigned_driver_details;
+    const pickedUp = t.assigned_driver_details?.traveler_picked_up;
+    const droppedOff = t.assigned_driver_details?.arrived_at_drop;
+    const status = t.transfer_details?.transfer_status || t.transfer_details?.status || 'pending';
+
+    const steps = [
+      { id: 1, title: 'Transfer Created', description: 'Your transfer request has been received', status: 'completed', time: null },
+      { id: 2, title: 'Traveler Assigned', description: hasTraveler ? `Traveler: ${t.traveler_details?.name || 'N/A'}` : 'Client needs to assign a traveler', status: hasTraveler ? 'completed' : 'pending', time: null },
+      { id: 3, title: 'Flight Details', description: hasFlight ? `Flight ${t.flight_details?.flight_no || 'N/A'}` : 'Client needs to add flight information', status: hasFlight ? 'completed' : 'pending', time: null },
+      { id: 4, title: 'Vendor Assigned', description: hasVendor ? `Vendor: ${t.vendor_details?.vendor_name || 'N/A'}` : 'Admin needs to assign a vendor', status: hasVendor ? 'completed' : 'pending', time: null },
+      { id: 5, title: 'Driver Assigned', description: hasDriver ? `Driver: ${t.assigned_driver_details?.name || 'N/A'}` : 'Vendor needs to assign a driver', status: hasDriver ? 'completed' : 'pending', time: null },
+      { id: 6, title: 'Driver En Route', description: 'Driver is on the way to pickup location', status: hasDriver && (status === 'enroute' || pickedUp) ? 'in_progress' : hasDriver ? 'pending' : 'pending', time: null },
+      { id: 7, title: 'Traveler Pickup', description: 'Driver has picked up the traveler', status: pickedUp ? 'completed' : hasDriver ? 'pending' : 'pending', time: null },
+      { id: 8, title: 'Transfer Completed', description: 'Traveler has been dropped off at destination', status: droppedOff ? 'completed' : 'pending', time: null }
+    ];
+    return steps;
+  };
+
   const defaultSteps = [
-    { id: 1, title: 'Transfer Requested', description: 'Your transfer request has been received', status: 'completed', time: '10:00 AM' },
-    { id: 2, title: 'Driver Assigned', description: 'Driver has been assigned to your transfer', status: 'completed', time: '10:05 AM' },
-    { id: 3, title: 'Driver En Route', description: 'Driver is on the way to pickup location', status: 'in_progress', time: '10:15 AM' },
-    { id: 4, title: 'Arrived at Pickup', description: 'Driver has arrived at pickup location', status: 'pending', time: null },
-    { id: 5, title: 'Transfer Started', description: 'Transfer has begun', status: 'pending', time: null },
-    { id: 6, title: 'Transfer Completed', description: 'You have reached your destination', status: 'pending', time: null }
+    { id: 1, title: 'Transfer Created', description: 'Your transfer request has been received', status: 'completed', time: null },
+    { id: 2, title: 'Traveler Assigned', description: 'Client needs to assign a traveler', status: 'pending', time: null },
+    { id: 3, title: 'Flight Details', description: 'Client needs to add flight information', status: 'pending', time: null },
+    { id: 4, title: 'Vendor Assigned', description: 'Admin needs to assign a vendor', status: 'pending', time: null },
+    { id: 5, title: 'Driver Assigned', description: 'Vendor needs to assign a driver', status: 'pending', time: null },
+    { id: 6, title: 'Driver En Route', description: 'Driver is on the way to pickup location', status: 'pending', time: null },
+    { id: 7, title: 'Traveler Pickup', description: 'Driver has picked up the traveler', status: 'pending', time: null },
+    { id: 8, title: 'Transfer Completed', description: 'Traveler has been dropped off at destination', status: 'pending', time: null }
   ];
 
   useEffect(() => {
-    setTrackingSteps(defaultSteps);
+    if (!transfer) setTrackingSteps(defaultSteps);
   }, []);
 
   // Poll for real-time location updates
@@ -94,9 +119,11 @@ const Tracking = () => {
               }));
             }
             
-            // Update progress steps if available
-            if (data.data.tracking.progressSteps) {
+            // Update progress steps from API or derive from transfer
+            if (data.data.tracking.progressSteps && data.data.tracking.progressSteps.length > 0) {
               setTrackingSteps(data.data.tracking.progressSteps);
+            } else if (data.data) {
+              setTrackingSteps(buildTrackingStepsFromTransfer(data.data));
             }
           }
         } catch (error) {
@@ -165,9 +192,13 @@ const Tracking = () => {
             setEstimatedArrival(new Date(data.data.tracking.estimatedArrival));
           }
           
-          if (data.data.tracking.progressSteps) {
+          if (data.data.tracking.progressSteps && data.data.tracking.progressSteps.length > 0) {
             setTrackingSteps(data.data.tracking.progressSteps);
+          } else {
+            setTrackingSteps(buildTrackingStepsFromTransfer(data.data));
           }
+        } else {
+          setTrackingSteps(buildTrackingStepsFromTransfer(data.data));
         }
         
         toast.success('Transfer found!');
@@ -186,46 +217,55 @@ const Tracking = () => {
   };
 
   const getStatusIcon = (status) => {
-    const iconClass = status === 'completed' ? 'text-success-600 dark:text-success-500' :
-                     status === 'in_progress' ? 'text-primary-600 dark:text-primary-400' :
-                     status === 'assigned' ? 'text-warning-600 dark:text-warning-500' :
-                     status === 'delayed' ? 'text-danger-600 dark:text-danger-500' :
-                     'text-muted-foreground';
+    const iconClass = status === 'completed' ? 'text-green-600 dark:text-green-400' :
+                     status === 'in_progress' || status === 'enroute' ? 'text-blue-600 dark:text-blue-400' :
+                     status === 'assigned' || status === 'waiting' ? 'text-amber-600 dark:text-amber-400' :
+                     status === 'delayed' || status === 'cancelled' ? 'text-red-600 dark:text-red-400' :
+                     'text-gray-500 dark:text-gray-400';
     switch (status) {
       case 'completed':
-        return <CheckCircle size={20} className={iconClass} />;
+        return <CheckCircle size={22} className={iconClass} />;
       case 'in_progress':
-        return <Navigation size={20} className={iconClass} />;
+      case 'enroute':
+        return <Navigation size={22} className={iconClass} />;
       case 'assigned':
-        return <User size={20} className={iconClass} />;
+      case 'waiting':
+        return <User size={22} className={iconClass} />;
       case 'pending':
-        return <Circle size={20} className={iconClass} />;
+        return <Circle size={22} className={iconClass} />;
       case 'delayed':
-        return <AlertCircle size={20} className={iconClass} />;
+      case 'cancelled':
+        return <AlertCircle size={22} className={iconClass} />;
       default:
-        return <Circle size={20} className="text-muted-foreground" />;
+        return <Circle size={22} className={iconClass} />;
     }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'completed': return 'text-success-600 dark:text-success-500';
-      case 'in_progress': return 'text-primary-600 dark:text-primary-400';
-      case 'pending': return 'text-muted-foreground';
-      case 'assigned': return 'text-warning-600 dark:text-warning-500';
-      case 'delayed': return 'text-danger-600 dark:text-danger-500';
-      default: return 'text-muted-foreground';
+      case 'completed': return 'text-green-700 dark:text-green-400';
+      case 'in_progress':
+      case 'enroute': return 'text-blue-700 dark:text-blue-400';
+      case 'pending': return 'text-foreground/80 dark:text-gray-300';
+      case 'assigned':
+      case 'waiting': return 'text-amber-700 dark:text-amber-400';
+      case 'delayed':
+      case 'cancelled': return 'text-red-700 dark:text-red-400';
+      default: return 'text-foreground/80 dark:text-gray-300';
     }
   };
 
   const getStatusBg = (status) => {
     switch (status) {
-      case 'completed': return 'bg-success-50 dark:bg-success-950 border-success-200 dark:border-success-800';
-      case 'in_progress': return 'bg-primary-50 dark:bg-primary-950 border-primary-300 dark:border-primary-700';
-      case 'assigned': return 'bg-warning-50 dark:bg-warning-950 border-warning-200 dark:border-warning-800';
-      case 'pending': return 'bg-muted border-border';
-      case 'delayed': return 'bg-danger-50 dark:bg-danger-950 border-danger-200 dark:border-danger-800';
-      default: return 'bg-muted border-border';
+      case 'completed': return 'bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-800/80';
+      case 'in_progress':
+      case 'enroute': return 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-700/80';
+      case 'assigned':
+      case 'waiting': return 'bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-700/80';
+      case 'pending': return 'bg-muted/50 dark:bg-muted/30 border-border dark:border-border';
+      case 'delayed':
+      case 'cancelled': return 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/80';
+      default: return 'bg-muted/50 dark:bg-muted/30 border-border dark:border-border';
     }
   };
 
@@ -233,19 +273,24 @@ const Tracking = () => {
     switch (status) {
       case 'completed': return 'Transfer completed successfully';
       case 'in_progress': return 'Driver is currently en route';
+      case 'enroute': return 'Driver is on the way to pickup';
+      case 'waiting': return 'Driver is waiting at pickup';
       case 'pending': return 'Waiting for driver assignment';
       case 'assigned': return 'Driver has been assigned and is preparing';
       case 'delayed': return 'Transfer is delayed';
+      case 'cancelled': return 'This transfer was cancelled';
       default: return 'Status unknown';
     }
   };
 
   const formatTime = (date) => {
-    return date ? new Date(date).toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    }) : null;
+    return date ? new Date(date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : null;
+  };
+
+  const formatDateTime = (date) => {
+    if (!date) return null;
+    const d = new Date(date);
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
   return (
@@ -338,155 +383,178 @@ const Tracking = () => {
             </button>
             {accordions.transferDetails && (
               <div className="px-6 pb-6 border-t border-border">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-5">{/* Transfer Details Content */}
-          <div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-5">
+                  {/* Left column: Status, Trip, Flight, Traveler, Times */}
+                  <div className="lg:col-span-2 space-y-5">
+                    {/* Status + Reference ID */}
+                    {(() => {
+                      const status = transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'pending';
+                      return (
+                        <div className={`${getStatusBg(status)} border rounded-xl p-4 flex items-center justify-between gap-4`}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            {getStatusIcon(status)}
+                            <div className="min-w-0">
+                              <div className={`text-lg font-semibold capitalize ${getStatusColor(status)}`}>
+                                {String(status).replace(/_/g, ' ')}
+                              </div>
+                              <div className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">
+                                {getStatusDescription(status)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 text-right pl-2 border-l border-border dark:border-gray-600">
+                            <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Reference</div>
+                            <div className="text-sm font-mono font-semibold text-gray-900 dark:text-gray-100 mt-0.5">{transfer._id}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
-            {/* Prominent Status Display */}
-            {(() => {
-              const status = transfer.transfer_details.transfer_status || transfer.transfer_details.status || 'pending';
-              return (
-                <div className={`${getStatusBg(status)} border-2 rounded-xl p-4 mb-6 flex items-center justify-between`}>
-                  <div className="flex items-center gap-3">
-                    {getStatusIcon(status)}
-                <div>
-                      <div className={`text-lg font-bold capitalize ${getStatusColor(status)}`}>
-                        {status.replace('_', ' ')}
+                    {/* Trip: From → To */}
+                    <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-4">
+                      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground">Trip</h3>
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
+                          <MapPin size={16} className="text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Pickup</div>
+                          <p className="text-base font-medium text-foreground">{transfer.transfer_details?.pickup_location || '—'}</p>
+                        </div>
+                      </div>
+                      <div className="ml-4 border-l-2 border-border pl-5 py-1">
+                        <div className="text-xs text-muted-foreground">to</div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
+                          <MapPin size={16} className="text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Drop-off</div>
+                          <p className="text-base font-medium text-foreground">{transfer.transfer_details?.drop_location || '—'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Flight (only when real flight) */}
+                    {transfer.flight_details?.flight_no && transfer.flight_details.flight_no !== 'XX000' && transfer.flight_details.flight_no !== 'TBD' && (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-3">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+                          <Plane size={16} /> Flight
+                        </h3>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Flight</span>
+                            <p className="font-mono font-medium text-foreground">{transfer.flight_details.flight_no}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Airline</span>
+                            <p className="font-medium text-foreground">{transfer.flight_details.airline || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Route</span>
+                            <p className="font-medium text-foreground">
+                              {[transfer.flight_details.departure_airport, transfer.flight_details.arrival_airport].filter(Boolean).join(' → ') || '—'}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Arrival</span>
+                            <p className="font-medium text-foreground">
+                              {formatDateTime(transfer.flight_details.arrival_time) || formatTime(transfer.flight_details.arrival_time) || '—'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Traveler */}
+                    {(transfer.traveler_details?.name || transfer.customer_details?.name) && (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-2">
+                          <User size={16} /> Traveler
+                        </h3>
+                        <p className="text-base font-medium text-foreground">
+                          {transfer.traveler_details?.name || transfer.customer_details?.name}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Scheduled & Estimated times (when flight exists) */}
+                    {(transfer.flight_details?.flight_no && transfer.flight_details.flight_no !== 'XX000' && transfer.flight_details.flight_no !== 'TBD') && (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-3">
+                          <Clock size={16} /> Pickup time
+                        </h3>
+                        <div className="flex flex-wrap gap-4">
+                          <div>
+                            <span className="text-xs text-muted-foreground block">Scheduled</span>
+                            <span className="text-base font-medium text-foreground">
+                              {formatDateTime(transfer.transfer_details?.estimated_pickup_time) || formatTime(transfer.transfer_details?.estimated_pickup_time || transfer.flight_details?.arrival_time) || '—'}
+                            </span>
+                          </div>
+                          {estimatedArrival && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block">Estimated arrival</span>
+                              <span className="text-base font-medium text-primary">{formatTime(estimatedArrival)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                      <div className="text-sm text-muted-foreground mt-0.5">
-                        {getStatusDescription(status)}
+
+                  {/* Right column: Driver */}
+                  <div className="lg:col-span-1">
+                    {transfer.assigned_driver_details ? (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 sticky top-4">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-4">
+                          <Car size={16} /> Driver
+                        </h3>
+                        <div className="space-y-4">
+                          <div>
+                            <span className="text-xs text-muted-foreground block mb-0.5">Name</span>
+                            <p className="text-base font-medium text-foreground">
+                              {transfer.assigned_driver_details.driver_name || transfer.assigned_driver_details.name || 'N/A'}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-xs text-muted-foreground block mb-0.5">Vehicle</span>
+                            <p className="text-base text-foreground">
+                              {transfer.assigned_driver_details.vehicle_type || 'N/A'}
+                              {transfer.assigned_driver_details.vehicle_number && ` · ${transfer.assigned_driver_details.vehicle_number}`}
+                            </p>
+                          </div>
+                          {(transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Contact</span>
+                              <a
+                                href={`tel:${transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number}`}
+                                className="text-base text-primary font-medium hover:underline"
+                              >
+                                {transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number}
+                              </a>
+                            </div>
+                          )}
+                          {driverLocation?.address && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5 flex items-center gap-1">
+                                <Navigation size={12} /> Current location
+                              </span>
+                              <p className="text-sm text-foreground">{driverLocation.address}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border bg-muted/10 p-4 text-center">
+                        <User size={24} className="mx-auto text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground">Driver not assigned yet</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-                  <div className="text-right">
-                    <div className="text-sm font-semibold text-foreground">
-                  Transfer ID
-                </div>
-                    <div className="text-base text-muted-foreground font-mono">
-                  {transfer._id}
-                </div>
-              </div>
-            </div>
-              );
-            })()}
-            
-            <div className="mb-5">
-              <div className="flex items-center mb-2">
-                <MapPin size={16} className="text-muted-foreground mr-2" />
-                <span className="text-sm font-medium text-foreground">From</span>
-              </div>
-              <p className="text-base text-foreground ml-6">
-                {transfer.transfer_details.pickup_location}
-              </p>
-            </div>
-
-            <div className="mb-5">
-              <div className="flex items-center mb-2">
-                <MapPin size={16} className="text-muted-foreground mr-2" />
-                <span className="text-sm font-medium text-foreground">To</span>
-              </div>
-              <p className="text-base text-foreground ml-6">
-                {transfer.transfer_details.drop_location}
-              </p>
-            </div>
-
-            <div className="mb-5">
-              <div className="flex items-center mb-2">
-                <Clock size={16} className="text-muted-foreground mr-2" />
-                <span className="text-sm font-medium text-foreground">Scheduled Time</span>
-              </div>
-              <p className="text-base text-foreground ml-6">
-                {formatTime(transfer.transfer_details.estimated_pickup_time)}
-              </p>
-            </div>
-
-            {estimatedArrival && (
-              <div className="mb-5">
-                <div className="flex items-center mb-2">
-                  <Clock size={16} className="text-primary mr-2" />
-                  <span className="text-sm font-medium text-foreground">Estimated Arrival</span>
-                </div>
-                <p className="text-base text-primary ml-6 font-medium">
-                  {formatTime(estimatedArrival)}
-                </p>
               </div>
             )}
-
-            {/* Status Badge */}
-            {(() => {
-              const status = transfer.transfer_details.transfer_status || transfer.transfer_details.status || 'pending';
-              return (
-                <div className="mt-5">
-                  <span className={`${getStatusBg(status)} ${getStatusColor(status)} px-4 py-2 rounded-lg text-sm font-semibold capitalize border`}>
-                    {status.replace('_', ' ')}
-              </span>
-            </div>
-              );
-            })()}
-          </div>
-
-          {/* Driver Details */}
-          {transfer.assigned_driver_details && (
-            <div>
-              <h2 className="text-lg font-semibold text-foreground mb-5">
-                Driver Details
-              </h2>
-              
-              <div className="mb-5">
-                <div className="flex items-center mb-2">
-                  <User size={16} className="text-muted-foreground mr-2" />
-                  <span className="text-sm font-medium text-foreground">Driver Name</span>
-                </div>
-                <p className="text-base text-foreground ml-6">
-                  {transfer.assigned_driver_details.driver_name || transfer.assigned_driver_details.name || 'N/A'}
-                </p>
-              </div>
-
-              <div className="mb-5">
-                <div className="flex items-center mb-2">
-                  <Car size={16} className="text-muted-foreground mr-2" />
-                  <span className="text-sm font-medium text-foreground">Vehicle</span>
-                </div>
-                <p className="text-base text-foreground ml-6">
-                  {transfer.assigned_driver_details.vehicle_type || 'N/A'}
-                  {transfer.assigned_driver_details.vehicle_number && ` - ${transfer.assigned_driver_details.vehicle_number}`}
-                  {transfer.assigned_driver_details.vehicle_license && ` (${transfer.assigned_driver_details.vehicle_license})`}
-                </p>
-              </div>
-
-              <div className="mb-5">
-                <div className="flex items-center mb-2">
-                  <Phone size={16} className="text-muted-foreground mr-2" />
-                  <span className="text-sm font-medium text-foreground">Contact</span>
-                </div>
-                {(transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number) && (
-                  <a 
-                    href={`tel:${transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number}`}
-                    className="text-base text-primary ml-6 no-underline hover:underline"
-                  >
-                    {transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number}
-                  </a>
-                )}
-                {!transfer.assigned_driver_details.driver_phone && !transfer.assigned_driver_details.contact_number && (
-                  <p className="text-base text-muted-foreground ml-6">Contact information not available</p>
-                )}
-              </div>
-
-              {driverLocation && (
-                <div className="mb-5">
-                  <div className="flex items-center mb-2">
-                    <Navigation size={16} className="text-muted-foreground mr-2" />
-                    <span className="text-sm font-medium text-foreground">Current Location</span>
-                  </div>
-                  <p className="text-base text-foreground ml-6">
-                    {driverLocation.address}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-              </div>
-      )}
           </div>
 
           {/* Completion Status Accordion */}
@@ -512,95 +580,7 @@ const Tracking = () => {
           </p>
           
           <div className="space-y-4">
-            {/* Flight Details Status */}
-            {(() => {
-              const isCompleted = transfer.flight_details?.flight_no && 
-                                  transfer.flight_details?.flight_no !== 'XX000';
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  isCompleted 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {isCompleted ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Plane size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
-                      <h3 className="font-semibold text-foreground">Flight Details</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        isCompleted 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                      }`}>
-                        {isCompleted ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isCompleted 
-                        ? `Flight ${transfer.flight_details.flight_no} - ${transfer.flight_details.airline || 'N/A'}`
-                        : 'Client needs to provide flight information'}
-                    </p>
-                    {!isCompleted && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">
-                        Action required by: <span className="font-semibold">Client</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Passenger Details Status */}
-            {(() => {
-              const isCompleted = transfer.customer_details?.no_of_passengers > 1 || 
-                                  transfer.customer_details?.luggage_count > 0;
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  isCompleted 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {isCompleted ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Users size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
-                      <h3 className="font-semibold text-foreground">Passenger & Luggage</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        isCompleted 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                      }`}>
-                        {isCompleted ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isCompleted 
-                        ? `${transfer.customer_details.no_of_passengers} passenger(s), ${transfer.customer_details.luggage_count} luggage`
-                        : 'Using default values (1 passenger, 0 luggage)'}
-                    </p>
-                    {!isCompleted && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">
-                        Action required by: <span className="font-semibold">Client</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Traveler Assignment Status */}
+            {/* 1. Traveler Assignment (first) */}
             {(() => {
               const isCompleted = !!transfer.traveler_details || !!transfer.traveler_id;
               return (
@@ -643,7 +623,95 @@ const Tracking = () => {
               );
             })()}
 
-            {/* Driver Assignment Status */}
+            {/* 2. Flight Details (second) */}
+            {(() => {
+              const isCompleted = transfer.flight_details?.flight_no && 
+                                  transfer.flight_details?.flight_no !== 'XX000' &&
+                                  transfer.flight_details?.flight_no !== 'TBD';
+              return (
+                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
+                  isCompleted 
+                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
+                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
+                }`}>
+                  <div className="flex-shrink-0 mt-0.5">
+                    {isCompleted ? (
+                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
+                    ) : (
+                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Plane size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
+                      <h3 className="font-semibold text-foreground">Flight Details</h3>
+                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
+                        isCompleted 
+                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
+                      }`}>
+                        {isCompleted ? 'Completed' : 'Pending'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {isCompleted 
+                        ? `Flight ${transfer.flight_details.flight_no} - ${transfer.flight_details.airline || 'N/A'}`
+                        : 'Client needs to provide flight information'}
+                    </p>
+                    {!isCompleted && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">
+                        Action required by: <span className="font-semibold">Client</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 3. Vendor Assignment (third) */}
+            {(() => {
+              const isCompleted = !!(transfer.vendor_details?.vendor_id || transfer.vendor_details?.vendor_name);
+              return (
+                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
+                  isCompleted 
+                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
+                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
+                }`}>
+                  <div className="flex-shrink-0 mt-0.5">
+                    {isCompleted ? (
+                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
+                    ) : (
+                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Building2 size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
+                      <h3 className="font-semibold text-foreground">Vendor Assignment</h3>
+                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
+                        isCompleted 
+                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
+                      }`}>
+                        {isCompleted ? 'Completed' : 'Pending'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {isCompleted 
+                        ? `Vendor: ${transfer.vendor_details.vendor_name || 'N/A'}`
+                        : 'Admin needs to assign a vendor'}
+                    </p>
+                    {!isCompleted && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">
+                        Action required by: <span className="font-semibold">Admin</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 4. Driver Assignment (fourth) */}
             {(() => {
               const isCompleted = !!transfer.assigned_driver_details;
               return (
@@ -661,7 +729,7 @@ const Tracking = () => {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <Truck size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
+                      <Car size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
                       <h3 className="font-semibold text-foreground">Driver Assignment</h3>
                       <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
                         isCompleted 
@@ -774,56 +842,15 @@ const Tracking = () => {
               );
             })()}
 
-            {/* Special Notes Status (Optional) */}
+            {/* Overall Progress Bar (4 steps: Traveler, Flight, Vendor, Driver) */}
             {(() => {
-              const hasNotes = transfer.transfer_details?.special_notes && 
-                              transfer.transfer_details.special_notes.trim().length > 0;
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  hasNotes 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-gray-50 dark:bg-gray-950/20 border-gray-200 dark:border-gray-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {hasNotes ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <Circle size={20} className="text-gray-400 dark:text-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <FileText size={16} className={hasNotes ? 'text-green-600 dark:text-green-400' : 'text-gray-400'} />
-                      <h3 className="font-semibold text-foreground">Special Notes</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        hasNotes 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                      }`}>
-                        {hasNotes ? 'Added' : 'Optional'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {hasNotes 
-                        ? transfer.transfer_details.special_notes
-                        : 'No special instructions provided'}
-                    </p>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Overall Progress Bar */}
-            {(() => {
-              const flightCompleted = transfer.flight_details?.flight_no && transfer.flight_details?.flight_no !== 'XX000';
-              const passengerCompleted = transfer.customer_details?.no_of_passengers > 1 || transfer.customer_details?.luggage_count > 0;
               const travelerCompleted = !!transfer.traveler_details || !!transfer.traveler_id;
+              const flightCompleted = transfer.flight_details?.flight_no && transfer.flight_details?.flight_no !== 'XX000' && transfer.flight_details?.flight_no !== 'TBD';
+              const vendorCompleted = !!(transfer.vendor_details?.vendor_id || transfer.vendor_details?.vendor_name);
               const driverCompleted = !!transfer.assigned_driver_details;
-              const pickupCompleted = transfer.assigned_driver_details?.traveler_picked_up || false;
-              const dropCompleted = transfer.assigned_driver_details?.arrived_at_drop || false;
               
-              const completedCount = [flightCompleted, passengerCompleted, travelerCompleted, driverCompleted, pickupCompleted, dropCompleted].filter(Boolean).length;
-              const totalRequired = 6;
+              const completedCount = [travelerCompleted, flightCompleted, vendorCompleted, driverCompleted].filter(Boolean).length;
+              const totalRequired = 4;
               const percentage = (completedCount / totalRequired) * 100;
               
               return (

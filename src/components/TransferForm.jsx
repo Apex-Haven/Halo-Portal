@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Save, Plane, User, MapPin, Truck, Calendar, Users as UsersIcon, Car, Plus, XCircle, ChevronRight, ChevronLeft, CheckCircle2, UserPlus, Building2, Copy, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
+import DatePicker from 'react-datepicker';
+import { startOfDay } from 'date-fns';
+import 'react-datepicker/dist/react-datepicker.css';
 import { useTheme } from '../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import Drawer from './Drawer';
 import Dropdown from './Dropdown';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,47 +14,126 @@ import { motion, AnimatePresence } from 'framer-motion';
 const TransferForm = ({ onClose, onSuccess }) => {
   const { isDark } = useTheme();
   const navigate = useNavigate();
+  const { user, isRole } = useAuth();
+  const isClient = isRole('CLIENT');
+
   const [currentStep, setCurrentStep] = useState(1);
   const [createdTransferId, setCreatedTransferId] = useState(null);
   const [copied, setCopied] = useState(false);
   const [formData, setFormData] = useState({
-    // Customer - Selected from dropdown
     customerId: '',
     customerName: '',
     customerEmail: '',
     customerPhone: '',
-    
-    // Transfer Details
+    // Delegate 1 (event format)
+    jobPosition: '',
+    companyName: '',
+    flightBooked: false,
+    arrivalFlightNo: '',
+    arrivalDateTime: '',
+    departureFlightNo: '',
+    departureDateTime: '',
+    consentEmail: false,
+    consentWhatsapp: false,
+    whatsappNumber: '',
+    // Additional delegates (from Travelers); user can add as many as needed
+    additionalDelegates: [],
+    //
     pickupLocation: '',
     dropLocation: '',
     eventPlace: '',
-    
-    // Vendor - Selected from dropdown
     vendorId: '',
     vendorName: '',
     vendorContact: '',
     vendorPhone: '',
-    vendorEmail: ''
+    vendorEmail: '',
+    travelerId: '',
+    travelerName: '',
+    travelerEmail: '',
+    travelerPhone: ''
   });
 
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [customers, setCustomers] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [travelers, setTravelers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingVendors, setLoadingVendors] = useState(false);
+  const [loadingTravelers, setLoadingTravelers] = useState(false);
 
-  const totalSteps = 3;
+  const totalSteps = isClient ? 2 : 3;
 
   useEffect(() => {
-    fetchCustomers();
-    fetchVendors();
-  }, []);
+    if (isClient) {
+      setCustomerFromUser();
+      fetchTravelers();
+    } else {
+      fetchCustomers();
+      fetchVendors();
+    }
+  }, [isClient]);
+
+  const setCustomerFromUser = () => {
+    if (!user) return;
+    const id = user._id || user.id || user.userId;
+    const name = [user.profile?.firstName, user.profile?.lastName].filter(Boolean).join(' ').trim() || user.username || user.email || 'Client';
+    setFormData(prev => ({
+      ...prev,
+      customerId: id,
+      customerName: name,
+      customerEmail: user.email || '',
+      customerPhone: user.profile?.phone || user.phone || ''
+    }));
+  };
+
+  const toDatetimeLocal = (d) => {
+    if (!d || !(d instanceof Date)) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const getMinTimeForFilter = () => {
+    const d = new Date();
+    d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15);
+    d.setSeconds(0, 0);
+    return d;
+  };
+  const getDefaultArrivalTime = (departureTime) => {
+    if (!departureTime) return '';
+    const d = new Date(departureTime);
+    d.setHours(d.getHours() + 24);
+    return toDatetimeLocal(d);
+  };
+
+  const fetchTravelers = async () => {
+    setLoadingTravelers(true);
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await fetch(`${API_BASE_URL}/travelers`, { headers: { Authorization: `Bearer ${token}` } });
+      if (response.ok) {
+        const data = await response.json();
+        setTravelers(data.success && Array.isArray(data.data) ? data.data : []);
+      } else {
+        setTravelers([]);
+      }
+    } catch (e) {
+      console.error('Error fetching travelers:', e);
+      setTravelers([]);
+    } finally {
+      setLoadingTravelers(false);
+    }
+  };
 
   // Clear ALL errors whenever step changes (when user navigates between steps)
   useEffect(() => {
     setErrors({});
   }, [currentStep]);
+
+  useEffect(() => {
+    if (user && isClient) setCustomerFromUser();
+  }, [user, isClient]);
 
   useEffect(() => {
     if (formData.vendorId && vendors.length > 0) {
@@ -59,7 +142,6 @@ const TransferForm = ({ onClose, onSuccess }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.vendorId]);
   
-  // Separate effect to handle vendor details when vendors array changes
   useEffect(() => {
     if (formData.vendorId && vendors.length > 0) {
       fetchVendorDetails(formData.vendorId);
@@ -263,6 +345,31 @@ const TransferForm = ({ onClose, onSuccess }) => {
       return;
     }
 
+    // Handle traveler selection (client flow)
+    if (name === 'travelerId') {
+      const selectedIdStr = String(value || '').trim();
+      const traveler = travelers.find(t => String(t._id || t._id?.toString() || '') === selectedIdStr);
+      if (traveler) {
+        const travelerName = [traveler.profile?.firstName, traveler.profile?.lastName].filter(Boolean).join(' ').trim() || traveler.username || '';
+        setFormData(prev => ({
+          ...prev,
+          travelerId: selectedIdStr,
+          travelerName,
+          travelerEmail: traveler.email || '',
+          travelerPhone: traveler.profile?.phone || traveler.phone || ''
+        }));
+      } else if (!value) {
+        setFormData(prev => ({
+          ...prev,
+          travelerId: '',
+          travelerName: '',
+          travelerEmail: '',
+          travelerPhone: ''
+        }));
+      }
+      return;
+    }
+
     // Handle vendor selection
     if (name === 'vendorId') {
       const selectedIdStr = String(value || '').trim();
@@ -321,29 +428,54 @@ const TransferForm = ({ onClose, onSuccess }) => {
     }
   };
 
-  // Step validation functions - return errors without setting state
   const validateStep1 = () => {
     const newErrors = {};
-    if (!formData.customerId) newErrors.customerId = 'Please select a client';
-    if (!formData.customerName.trim()) newErrors.customerName = 'Client name is required';
-    if (!formData.customerEmail.trim()) newErrors.customerEmail = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) {
-      newErrors.customerEmail = 'Invalid email format';
+    if (isClient) {
+      if (!formData.customerId) newErrors.customerId = 'Your account is required';
+      if (!formData.customerName?.trim()) newErrors.customerName = 'Full name is required';
+      if (!formData.customerEmail?.trim()) newErrors.customerEmail = 'Email is required';
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) newErrors.customerEmail = 'Invalid email format';
+      if (!formData.customerPhone?.trim()) newErrors.customerPhone = 'Phone is required';
+      else {
+        const phone = formData.customerPhone.trim();
+        if (!/^\+[1-9]\d{1,14}$/.test(phone) && !/^\d{10,15}$/.test(phone)) {
+          newErrors.customerPhone = 'Phone must be valid (e.g., +1234567890 or 1234567890)';
+        }
+      }
+      if (formData.flightBooked) {
+        if (!formData.arrivalFlightNo?.trim()) newErrors.arrivalFlightNo = 'Arrival flight number is required';
+        if (!formData.arrivalDateTime) newErrors.arrivalDateTime = 'Arrival date & time is required';
+        if (!formData.departureFlightNo?.trim()) newErrors.departureFlightNo = 'Departure flight number is required';
+        if (!formData.departureDateTime) newErrors.departureDateTime = 'Departure date & time is required';
+        if (formData.arrivalDateTime && formData.departureDateTime && new Date(formData.arrivalDateTime) <= new Date(formData.departureDateTime)) {
+          newErrors.arrivalDateTime = 'Arrival must be after departure';
+        }
+      }
+      (formData.additionalDelegates || []).forEach((d, idx) => {
+        if (!d.travelerId) newErrors[`delegates.${idx}.travelerId`] = 'Please select a delegate';
+        else if (!d.flightSameAsPrimary) {
+          if (!d.arrivalFlightNo?.trim()) newErrors[`delegates.${idx}.arrivalFlightNo`] = 'Arrival flight number is required';
+          if (!d.arrivalDateTime) newErrors[`delegates.${idx}.arrivalDateTime`] = 'Arrival date & time is required';
+          if (!d.departureFlightNo?.trim()) newErrors[`delegates.${idx}.departureFlightNo`] = 'Departure flight number is required';
+          if (!d.departureDateTime) newErrors[`delegates.${idx}.departureDateTime`] = 'Departure date & time is required';
+          if (d.arrivalDateTime && d.departureDateTime && new Date(d.arrivalDateTime) <= new Date(d.departureDateTime)) {
+            newErrors[`delegates.${idx}.arrivalDateTime`] = 'Arrival must be after departure';
+          }
+        }
+      });
+      return newErrors;
     }
-    // Phone validation - allow international format or regular format
-    if (!formData.customerPhone.trim()) {
-      newErrors.customerPhone = 'Phone is required';
-    } else {
+    if (!formData.customerId) newErrors.customerId = 'Please select a client';
+    if (!formData.customerName?.trim()) newErrors.customerName = 'Client name is required';
+    if (!formData.customerEmail?.trim()) newErrors.customerEmail = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.customerEmail)) newErrors.customerEmail = 'Invalid email format';
+    if (!formData.customerPhone?.trim()) newErrors.customerPhone = 'Phone is required';
+    else {
       const phone = formData.customerPhone.trim();
-      // Accept both international format (+1234567890) and regular format (1234567890)
-      const isValidInternational = /^\+[1-9]\d{1,14}$/.test(phone);
-      const isValidRegular = /^\d{10,15}$/.test(phone);
-      if (!isValidInternational && !isValidRegular) {
+      if (!/^\+[1-9]\d{1,14}$/.test(phone) && !/^\d{10,15}$/.test(phone)) {
         newErrors.customerPhone = 'Phone must be valid (e.g., +1234567890 or 1234567890)';
       }
     }
-    
-    console.log('Step 1 validation:', { formData, newErrors });
     return newErrors;
   };
 
@@ -357,9 +489,7 @@ const TransferForm = ({ onClose, onSuccess }) => {
 
   const validateStep3 = () => {
     const newErrors = {};
-    if (!formData.vendorId) {
-      newErrors.vendorId = 'Please select a vendor';
-    }
+    // Vendor is optional for admin - they can assign from transfer list later
     return newErrors;
   };
 
@@ -437,54 +567,105 @@ const TransferForm = ({ onClose, onSuccess }) => {
     setLoading(true);
 
     try {
-      // Generate transfer ID (APX + 6 digits) - ensure always 6 digits
-      const randomNum = Math.floor(Math.random() * 900000) + 100000; // 100000 to 999999
-      const transferId = 'APX' + randomNum.toString().padStart(6, '0'); // Ensure exactly 6 digits
+      // APEX ID is generated by backend (APX + client name + 5 digits)
+      const normalizePhone = (p) => {
+        if (!p || typeof p !== 'string') return p;
+        const t = p.trim().replace(/\s/g, '');
+        if (/^\+[1-9]\d{1,14}$/.test(t)) return t;
+        if (/^91\d{10}$/.test(t)) return `+${t}`;
+        if (/^9\d{9}$/.test(t)) return `+91${t}`;
+        if (/^\d{10,15}$/.test(t)) return `+${t}`;
+        return t;
+      };
 
-      // Find the selected vendor to get vendorId string
-      // For User model vendors, vendorId might be in vendorDetails or at root level
-      const selectedVendor = vendors.find(v => v._id === formData.vendorId || v.vendorId === formData.vendorId);
-      // Use the MongoDB _id (24 characters) for vendor_id in vendor_details
-      const vendorIdString = selectedVendor?._id?.toString() || formData.vendorId;
+      const nowIso = new Date().toISOString();
+      const flightDetailsFromDelegate1 = formData.flightBooked && formData.arrivalDateTime && formData.departureDateTime
+        ? {
+          flight_no: (formData.arrivalFlightNo || formData.departureFlightNo || 'XX000').trim().toUpperCase().slice(0, 10) || 'XX000',
+          airline: 'TBD',
+          departure_airport: 'TBD',
+          arrival_airport: 'TBD',
+          departure_time: new Date(formData.departureDateTime).toISOString(),
+          arrival_time: new Date(formData.arrivalDateTime).toISOString(),
+          status: 'on_time',
+          delay_minutes: 0
+        }
+        : {
+          flight_no: 'XX000',
+          airline: 'TBD',
+          departure_airport: 'TBD',
+          arrival_airport: 'TBD',
+          departure_time: nowIso,
+          arrival_time: nowIso,
+          status: 'on_time',
+          delay_minutes: 0
+        };
 
-      // Prepare transfer data (simplified initial form - flight details, passengers, luggage will be added later)
       const transferData = {
-        _id: transferId,
         customer_id: formData.customerId,
         customer_details: {
           name: formData.customerName,
           email: formData.customerEmail,
-          contact_number: formData.customerPhone,
-          no_of_passengers: 1, // Default value - will be updated later
-          luggage_count: 0 // Default value - will be updated later
+          contact_number: normalizePhone(formData.customerPhone) || formData.customerPhone,
+          no_of_passengers: 1 + (formData.additionalDelegates?.length || 0),
+          luggage_count: 0,
+          job_position: formData.jobPosition || undefined,
+          company_name: formData.companyName || undefined,
+          consent_email: formData.consentEmail || undefined,
+          consent_whatsapp: formData.consentWhatsapp || undefined,
+          whatsapp_number: formData.whatsappNumber?.trim() || undefined,
+          flight_booked: formData.flightBooked || undefined
         },
-        // Flight details - placeholder values that pass validation, will be updated later
-        flight_details: {
-          flight_no: 'XX000', // Placeholder in valid format - will be updated later
-          airline: 'TBD',
-          departure_airport: 'TBD',
-          arrival_airport: 'TBD',
-          departure_time: new Date().toISOString(),
-          arrival_time: new Date().toISOString(),
-          status: 'on_time', // Default status - will be updated when flight details are added
-          delay_minutes: 0
-        },
+        flight_details: flightDetailsFromDelegate1,
         transfer_details: {
           pickup_location: formData.pickupLocation,
           drop_location: formData.dropLocation,
           event_place: formData.eventPlace,
-          estimated_pickup_time: new Date().toISOString(), // Will be updated when flight details are added
-          special_notes: '' // Will be added later if needed
-        },
-        vendor_id: formData.vendorId,
-        vendor_details: {
+          estimated_pickup_time: new Date().toISOString(),
+          special_notes: ''
+        }
+      };
+
+      if (isClient && Array.isArray(formData.additionalDelegates) && formData.additionalDelegates.length > 0) {
+        transferData.delegates = formData.additionalDelegates.map((d) => {
+          const entry = {
+            traveler_id: d.travelerId,
+            flight_same_as_primary: d.flightSameAsPrimary !== false
+          };
+          if (!entry.flight_same_as_primary && d.arrivalDateTime && d.departureDateTime) {
+            entry.flight_details = {
+              flight_no: (d.arrivalFlightNo || d.departureFlightNo || 'XX000').trim().toUpperCase().slice(0, 10) || 'XX000',
+              airline: 'TBD',
+              departure_airport: 'TBD',
+              arrival_airport: 'TBD',
+              departure_time: new Date(d.departureDateTime).toISOString(),
+              arrival_time: new Date(d.arrivalDateTime).toISOString(),
+              status: 'on_time',
+              delay_minutes: 0
+            };
+          }
+          return entry;
+        });
+      } else if (isClient && formData.travelerId) {
+        transferData.traveler_id = formData.travelerId;
+        transferData.traveler_details = {
+          name: formData.travelerName,
+          email: formData.travelerEmail,
+          contact_number: normalizePhone(formData.travelerPhone) || formData.travelerPhone || ''
+        };
+      }
+      if (!isClient && formData.vendorId) {
+        const selectedVendor = vendors.find(v => v._id === formData.vendorId || v.vendorId === formData.vendorId);
+        const vendorIdString = selectedVendor?._id?.toString() || formData.vendorId;
+        transferData.vendor_id = vendorIdString;
+        transferData.vendor_details = {
           vendor_id: vendorIdString,
           vendor_name: formData.vendorName,
           contact_person: formData.vendorContact,
           contact_number: formData.vendorPhone,
           email: formData.vendorEmail
-        }
-      };
+        };
+      }
 
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const response = await fetch(`${API_BASE_URL}/transfers`, {
@@ -514,7 +695,7 @@ const TransferForm = ({ onClose, onSuccess }) => {
       }
 
       if (data.success) {
-        setCreatedTransferId(transferId);
+        setCreatedTransferId(data.data?._id || data.data?.apexId);
         // Don't close immediately - show success step with APEX ID
       } else {
         // Show detailed error message
@@ -636,11 +817,16 @@ const TransferForm = ({ onClose, onSuccess }) => {
     );
   }
 
-  const steps = [
-    { number: 1, title: 'Select Client', icon: User },
-    { number: 2, title: 'Transfer Details', icon: MapPin },
-    { number: 3, title: 'Vendor Details', icon: Truck }
-  ];
+  const steps = isClient
+    ? [
+        { number: 1, title: 'Traveler & Your Details', icon: User },
+        { number: 2, title: 'Transfer Details', icon: MapPin }
+      ]
+    : [
+        { number: 1, title: 'Select Client', icon: User },
+        { number: 2, title: 'Transfer Details', icon: MapPin },
+        { number: 3, title: 'Vendor (Optional)', icon: Truck }
+      ];
 
   return (
     <Drawer
@@ -709,7 +895,7 @@ const TransferForm = ({ onClose, onSuccess }) => {
           <form onSubmit={(e) => { e.preventDefault(); if (currentStep === totalSteps) handleSubmit(e); }} className="flex flex-col h-full">
             <div className="flex-1 overflow-y-auto px-8 pt-8 pb-6 min-h-0">
           <AnimatePresence mode="wait">
-            {/* Step 1: Select Client */}
+            {/* Step 1: Client = Traveler + Your details; Admin = Select Client */}
             {currentStep === 1 && (
               <motion.div
                 key="step1"
@@ -720,94 +906,287 @@ const TransferForm = ({ onClose, onSuccess }) => {
               >
                 <div>
                 <div className="mb-8">
-                  <h3 className="text-2xl font-bold text-foreground mb-2">Select Client</h3>
-                  <p className="text-sm text-muted-foreground">Choose the client for this transfer</p>
+                  <h3 className="text-2xl font-bold text-foreground mb-2">
+                    {isClient ? 'Traveler & Your Details' : 'Select Client'}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {isClient ? 'Select the traveler for this transfer. Vendor will be assigned by admin.' : 'Choose the client for this transfer'}
+                  </p>
                 </div>
-                {loadingCustomers ? (
-                  <div className="flex justify-center items-center py-12">
-                    <div className="text-muted-foreground">Loading clients...</div>
-                  </div>
-                ) : customers.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 px-4">
-                    <User size={48} className="text-muted-foreground mb-4" />
-                    <h4 className="text-lg font-semibold text-foreground mb-2">No Clients Found</h4>
-                    <p className="text-muted-foreground text-center mb-6 max-w-md">
-                      You need to register a client in User Management before creating a transfer.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        navigate('/user-management');
-                      }}
-                      className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
-                    >
-                      <UserPlus size={16} />
-                      Register a Client
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="mb-4">
-                      <Dropdown
-                        label="Select Client *"
-                        name="customerId"
-                        value={formData.customerId || ''}
-                        onChange={handleChange}
-                        options={[
-                          { value: '', label: 'Select a client' },
-                          ...customers.map(customer => {
-                            const id = customer._id?.toString() || String(customer._id || '')
-                            return {
-                              value: id,
-                              label: `${customer.profile?.firstName || ''} ${customer.profile?.lastName || ''}`.trim() + ' - ' + customer.email
-                            }
-                          })
-                        ]}
-                        placeholder="Select a client"
-                        minWidth="100%"
-                      />
-                      {errors.customerId && <span className="text-red-500 text-xs mt-1 block">{errors.customerId}</span>}
-                    </div>
-                    
-                    {/* Show populated customer details */}
-                    {formData.customerId && (
-                      <div className="p-5 bg-card rounded-xl border border-border shadow-sm">
-                        <h4 className="text-base font-bold text-foreground mb-4 flex items-center gap-2">
-                          <User size={18} className="text-primary" />
-                          Customer Details
-                        </h4>
-                        <div className="space-y-3 text-sm">
-                          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                            <span className="text-muted-foreground font-medium">Name:</span>
-                            <span className={`font-semibold ${!formData.customerName ? 'text-red-500' : 'text-foreground'}`}>
-                              {formData.customerName || 'Not set'}
-                            </span>
+                {isClient ? (
+                  <div className="space-y-8">
+                    <section className="space-y-4">
+                      <h4 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                        <User size={20} className="text-primary" />
+                        Delegate 1 (Your details)
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">Full Name *</label>
+                          <input type="text" name="customerName" value={formData.customerName} onChange={handleChange} placeholder="Full name" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors.customerName ? 'border-red-500' : 'border-input'}`} />
+                          {errors.customerName && <p className="text-xs text-red-500 mt-1">{errors.customerName}</p>}
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">Job Position / Designation</label>
+                          <input type="text" name="jobPosition" value={formData.jobPosition} onChange={handleChange} placeholder="e.g. Manager" className="w-full px-4 py-2.5 border border-input rounded-lg bg-background text-foreground" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">Company Name</label>
+                          <input type="text" name="companyName" value={formData.companyName} onChange={handleChange} placeholder="Company" className="w-full px-4 py-2.5 border border-input rounded-lg bg-background text-foreground" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">Email *</label>
+                          <input type="email" name="customerEmail" value={formData.customerEmail} onChange={handleChange} placeholder="email@example.com" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors.customerEmail ? 'border-red-500' : 'border-input'}`} />
+                          {errors.customerEmail && <p className="text-xs text-red-500 mt-1">{errors.customerEmail}</p>}
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">Phone Number *</label>
+                          <input type="tel" name="customerPhone" value={formData.customerPhone} onChange={handleChange} placeholder="+1234567890" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors.customerPhone ? 'border-red-500' : 'border-input'}`} />
+                          {errors.customerPhone && <p className="text-xs text-red-500 mt-1">{errors.customerPhone}</p>}
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-foreground mb-1">Add delegates (from your Travelers)</label>
+                          <p className="text-xs text-muted-foreground mb-2">Add as many delegates as needed. Manage delegates on the Travelers page.</p>
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const id = e.target.value;
+                              if (!id) return;
+                              const t = travelers.find(x => (x._id || x.id) === id);
+                              const name = t ? `${t.profile?.firstName || ''} ${t.profile?.lastName || ''}`.trim() || t.email : '';
+                              const used = (formData.additionalDelegates || []).map(d => d.travelerId);
+                              if (used.includes(id)) return;
+                              setFormData(prev => ({
+                                ...prev,
+                                additionalDelegates: [...(prev.additionalDelegates || []), {
+                                  travelerId: id,
+                                  travelerName: name,
+                                  flightSameAsPrimary: true,
+                                  arrivalFlightNo: '',
+                                  arrivalDateTime: '',
+                                  departureFlightNo: '',
+                                  departureDateTime: ''
+                                }]
+                              }));
+                              e.target.value = '';
+                            }}
+                            className="w-full px-4 py-2.5 border border-input rounded-lg bg-background text-foreground"
+                          >
+                            <option value="">Select a traveler to add as delegate...</option>
+                            {(travelers || []).filter(t => !(formData.additionalDelegates || []).some(d => d.travelerId === (t._id || t.id))).map(t => (
+                              <option key={t._id || t.id} value={t._id || t.id}>
+                                {`${t.profile?.firstName || ''} ${t.profile?.lastName || ''}`.trim() || t.email} ({t.email})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="pt-2">
+                        <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
+                          <input type="checkbox" checked={formData.flightBooked} onChange={(e) => setFormData(prev => ({ ...prev, flightBooked: e.target.checked }))} className="rounded border-input" />
+                          Have you already booked your flight for the event?
+                        </label>
+                      </div>
+                      {formData.flightBooked && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-border">
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-1">Arrival Flight Number *</label>
+                            <input type="text" name="arrivalFlightNo" value={formData.arrivalFlightNo} onChange={handleChange} placeholder="e.g. AI202" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors.arrivalFlightNo ? 'border-red-500' : 'border-input'}`} />
+                            {errors.arrivalFlightNo && <p className="text-xs text-red-500 mt-1">{errors.arrivalFlightNo}</p>}
                           </div>
-                          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                            <span className="text-muted-foreground font-medium">Email:</span>
-                            <span className={`font-semibold ${!formData.customerEmail ? 'text-red-500' : 'text-foreground'}`}>
-                              {formData.customerEmail || 'Not set'}
-                            </span>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-1">Arrival Date & Time *</label>
+                            <DatePicker selected={formData.arrivalDateTime ? new Date(formData.arrivalDateTime) : null} onChange={(date) => setFormData(prev => ({ ...prev, arrivalDateTime: date ? toDatetimeLocal(date) : '' }))} minDate={startOfDay(new Date())} showTimeSelect timeIntervals={15} dateFormat="dd MMM yyyy, HH:mm" placeholderText="Select" filterTime={(time) => time.getTime() >= getMinTimeForFilter().getTime()} popperClassName="halo-datepicker-popper" calendarClassName="halo-datepicker-calendar" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors.arrivalDateTime ? 'border-red-500' : 'border-input'}`} />
+                            {errors.arrivalDateTime && <p className="text-xs text-red-500 mt-1">{errors.arrivalDateTime}</p>}
                           </div>
-                          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                            <span className="text-muted-foreground font-medium">Phone:</span>
-                            <span className={`font-semibold ${!formData.customerPhone ? 'text-red-500' : 'text-foreground'}`}>
-                              {formData.customerPhone || 'Not set'}
-                            </span>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-1">Departure Flight Number *</label>
+                            <input type="text" name="departureFlightNo" value={formData.departureFlightNo} onChange={handleChange} placeholder="e.g. EK501" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors.departureFlightNo ? 'border-red-500' : 'border-input'}`} />
+                            {errors.departureFlightNo && <p className="text-xs text-red-500 mt-1">{errors.departureFlightNo}</p>}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-foreground mb-1">Departure Date & Time *</label>
+                            <DatePicker selected={formData.departureDateTime ? new Date(formData.departureDateTime) : null} onChange={(date) => {
+                              if (!date) { setFormData(prev => ({ ...prev, departureDateTime: '' })); return; }
+                              const dep = toDatetimeLocal(date);
+                              let arr = formData.arrivalDateTime;
+                              if (arr && new Date(arr) <= new Date(dep)) arr = getDefaultArrivalTime(dep);
+                              setFormData(prev => ({ ...prev, departureDateTime: dep, arrivalDateTime: arr || prev.arrivalDateTime }));
+                            }} minDate={startOfDay(new Date())} showTimeSelect timeIntervals={15} dateFormat="dd MMM yyyy, HH:mm" placeholderText="Select" filterTime={(time) => time.getTime() >= getMinTimeForFilter().getTime()} popperClassName="halo-datepicker-popper" calendarClassName="halo-datepicker-calendar" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors.departureDateTime ? 'border-red-500' : 'border-input'}`} />
+                            {errors.departureDateTime && <p className="text-xs text-red-500 mt-1">{errors.departureDateTime}</p>}
                           </div>
                         </div>
-                        {(!formData.customerName || !formData.customerEmail || !formData.customerPhone) && (
-                          <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-2">
-                            <span className="text-red-500 text-lg">⚠️</span>
-                            <div className="text-xs text-red-600 dark:text-red-400 leading-relaxed">
-                              <strong>Missing Information:</strong> Some required customer information is missing. Please ensure the customer profile is complete in User Management.
+                      )}
+                      <div className="flex flex-col gap-2 pt-4">
+                        <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
+                          <input type="checkbox" checked={formData.consentEmail} onChange={(e) => setFormData(prev => ({ ...prev, consentEmail: e.target.checked }))} className="rounded border-input" />
+                          I agree to receive email communication regarding my airport transfers and event travel coordination.
+                        </label>
+                        <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
+                          <input type="checkbox" checked={formData.consentWhatsapp} onChange={(e) => setFormData(prev => ({ ...prev, consentWhatsapp: e.target.checked }))} className="rounded border-input" />
+                          I consent to receive WhatsApp notifications related to pickup schedules and updates.
+                        </label>
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">WhatsApp number (if different from phone)</label>
+                          <input type="tel" name="whatsappNumber" value={formData.whatsappNumber} onChange={handleChange} placeholder="+1234567890" className="w-full px-4 py-2.5 border border-input rounded-lg bg-background text-foreground" />
+                        </div>
+                      </div>
+                    </section>
+                    {(formData.additionalDelegates || []).length > 0 && (
+                      <section className="space-y-4 pt-6 border-t border-border">
+                        <h4 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                          <UsersIcon size={20} className="text-primary" />
+                          Additional delegates ({formData.additionalDelegates.length})
+                        </h4>
+                        {(formData.additionalDelegates || []).map((d, idx) => (
+                          <div key={d.travelerId + idx} className="p-4 rounded-lg border border-border bg-muted/30 space-y-4">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-foreground">{d.travelerName || 'Delegate'}</span>
+                              <button type="button" onClick={() => setFormData(prev => ({ ...prev, additionalDelegates: prev.additionalDelegates.filter((_, i) => i !== idx) }))} className="text-red-600 hover:text-red-700 p-1">
+                                <XCircle size={18} />
+                              </button>
                             </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Flight same as primary?</label>
+                                <select value={d.flightSameAsPrimary ? 'yes' : 'no'} onChange={(e) => setFormData(prev => ({
+                                  ...prev,
+                                  additionalDelegates: prev.additionalDelegates.map((item, i) => i === idx ? { ...item, flightSameAsPrimary: e.target.value === 'yes' } : item)
+                                }))} className="w-full px-4 py-2.5 border border-input rounded-lg bg-background text-foreground">
+                                  <option value="yes">Yes</option>
+                                  <option value="no">No</option>
+                                </select>
+                              </div>
+                            </div>
+                            {!d.flightSameAsPrimary && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-foreground mb-1">Arrival Flight Number *</label>
+                                  <input type="text" value={d.arrivalFlightNo || ''} onChange={(e) => setFormData(prev => ({
+                                    ...prev,
+                                    additionalDelegates: prev.additionalDelegates.map((item, i) => i === idx ? { ...item, arrivalFlightNo: e.target.value } : item)
+                                  }))} className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors[`delegates.${idx}.arrivalFlightNo`] ? 'border-red-500' : 'border-input'}`} placeholder="e.g. AI202" />
+                                  {errors[`delegates.${idx}.arrivalFlightNo`] && <p className="text-xs text-red-500 mt-1">{errors[`delegates.${idx}.arrivalFlightNo`]}</p>}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-foreground mb-1">Arrival Date & Time *</label>
+                                  <DatePicker selected={d.arrivalDateTime ? new Date(d.arrivalDateTime) : null} onChange={(date) => setFormData(prev => ({
+                                    ...prev,
+                                    additionalDelegates: prev.additionalDelegates.map((item, i) => i === idx ? { ...item, arrivalDateTime: date ? toDatetimeLocal(date) : '' } : item)
+                                  }))} minDate={startOfDay(new Date())} showTimeSelect timeIntervals={15} dateFormat="dd MMM yyyy, HH:mm" placeholderText="Select" filterTime={(time) => time.getTime() >= getMinTimeForFilter().getTime()} popperClassName="halo-datepicker-popper" calendarClassName="halo-datepicker-calendar" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors[`delegates.${idx}.arrivalDateTime`] ? 'border-red-500' : 'border-input'}`} />
+                                  {errors[`delegates.${idx}.arrivalDateTime`] && <p className="text-xs text-red-500 mt-1">{errors[`delegates.${idx}.arrivalDateTime`]}</p>}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-foreground mb-1">Departure Flight Number *</label>
+                                  <input type="text" value={d.departureFlightNo || ''} onChange={(e) => setFormData(prev => ({
+                                    ...prev,
+                                    additionalDelegates: prev.additionalDelegates.map((item, i) => i === idx ? { ...item, departureFlightNo: e.target.value } : item)
+                                  }))} className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors[`delegates.${idx}.departureFlightNo`] ? 'border-red-500' : 'border-input'}`} placeholder="e.g. EK501" />
+                                  {errors[`delegates.${idx}.departureFlightNo`] && <p className="text-xs text-red-500 mt-1">{errors[`delegates.${idx}.departureFlightNo`]}</p>}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-foreground mb-1">Departure Date & Time *</label>
+                                  <DatePicker selected={d.departureDateTime ? new Date(d.departureDateTime) : null} onChange={(date) => {
+                                    if (!date) setFormData(prev => ({ ...prev, additionalDelegates: prev.additionalDelegates.map((item, i) => i === idx ? { ...item, departureDateTime: '' } : item) }));
+                                    else {
+                                      const dep = toDatetimeLocal(date);
+                                      setFormData(prev => {
+                                        const next = prev.additionalDelegates.map((item, i) => {
+                                          if (i !== idx) return item;
+                                          let arr = item.arrivalDateTime;
+                                          if (arr && new Date(arr) <= new Date(dep)) arr = getDefaultArrivalTime(dep);
+                                          return { ...item, departureDateTime: dep, arrivalDateTime: arr || item.arrivalDateTime };
+                                        });
+                                        return { ...prev, additionalDelegates: next };
+                                      });
+                                    }
+                                  }} minDate={startOfDay(new Date())} showTimeSelect timeIntervals={15} dateFormat="dd MMM yyyy, HH:mm" placeholderText="Select" filterTime={(time) => time.getTime() >= getMinTimeForFilter().getTime()} popperClassName="halo-datepicker-popper" calendarClassName="halo-datepicker-calendar" className={`w-full px-4 py-2.5 border rounded-lg bg-background text-foreground ${errors[`delegates.${idx}.departureDateTime`] ? 'border-red-500' : 'border-input'}`} />
+                                  {errors[`delegates.${idx}.departureDateTime`] && <p className="text-xs text-red-500 mt-1">{errors[`delegates.${idx}.departureDateTime`]}</p>}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    <p className="text-xs text-muted-foreground">Vendor will be assigned by admin.</p>
+                  </div>
+                ) : (
+                  <>
+                    {loadingCustomers ? (
+                      <div className="flex justify-center items-center py-12">
+                        <div className="text-muted-foreground">Loading clients...</div>
+                      </div>
+                    ) : customers.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 px-4">
+                        <User size={48} className="text-muted-foreground mb-4" />
+                        <h4 className="text-lg font-semibold text-foreground mb-2">No Clients Found</h4>
+                        <p className="text-muted-foreground text-center mb-6 max-w-md">
+                          You need to register a client in User Management before creating a transfer.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { onClose(); navigate('/user-management'); }}
+                          className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
+                        >
+                          <UserPlus size={16} /> Register a Client
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="mb-4">
+                          <Dropdown
+                            label="Select Client *"
+                            name="customerId"
+                            value={formData.customerId || ''}
+                            onChange={handleChange}
+                            options={[
+                              { value: '', label: 'Select a client' },
+                              ...customers.map(customer => {
+                                const id = customer._id?.toString() || String(customer._id || '');
+                                return {
+                                  value: id,
+                                  label: `${[customer.profile?.firstName, customer.profile?.lastName].filter(Boolean).join(' ').trim() || ''} - ${customer.email}`.trim() || customer.email
+                                };
+                              })
+                            ]}
+                            placeholder="Select a client"
+                            minWidth="100%"
+                          />
+                          {errors.customerId && <span className="text-red-500 text-xs mt-1 block">{errors.customerId}</span>}
+                        </div>
+                        {formData.customerId && (
+                          <div className="p-5 bg-card rounded-xl border border-border shadow-sm">
+                            <h4 className="text-base font-bold text-foreground mb-4 flex items-center gap-2">
+                              <User size={18} className="text-primary" /> Customer Details
+                            </h4>
+                            <div className="space-y-3 text-sm">
+                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                                <span className="text-muted-foreground font-medium">Name:</span>
+                                <span className={`font-semibold ${!formData.customerName ? 'text-red-500' : 'text-foreground'}`}>{formData.customerName || 'Not set'}</span>
+                              </div>
+                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                                <span className="text-muted-foreground font-medium">Email:</span>
+                                <span className={`font-semibold ${!formData.customerEmail ? 'text-red-500' : 'text-foreground'}`}>{formData.customerEmail || 'Not set'}</span>
+                              </div>
+                              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                                <span className="text-muted-foreground font-medium">Phone:</span>
+                                <span className={`font-semibold ${!formData.customerPhone ? 'text-red-500' : 'text-foreground'}`}>{formData.customerPhone || 'Not set'}</span>
+                              </div>
+                            </div>
+                            {(!formData.customerName || !formData.customerEmail || !formData.customerPhone) && (
+                              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-2">
+                                <span className="text-red-500 text-lg">⚠️</span>
+                                <div className="text-xs text-red-600 dark:text-red-400 leading-relaxed">
+                                  <strong>Missing Information:</strong> Ensure the customer profile is complete in User Management.
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
               </motion.div>
@@ -900,8 +1279,8 @@ const TransferForm = ({ onClose, onSuccess }) => {
               >
               <div>
                 <div className="mb-8">
-                  <h3 className="text-2xl font-bold text-foreground mb-2">Select Vendor</h3>
-                  <p className="text-sm text-muted-foreground">Choose the vendor and assign driver (optional)</p>
+                  <h3 className="text-2xl font-bold text-foreground mb-2">Assign Vendor (Optional)</h3>
+                  <p className="text-sm text-muted-foreground">You can select a vendor here or assign one later from the transfer list.</p>
                 </div>
                 {loadingVendors ? (
                   <div className="flex justify-center items-center py-12">
@@ -910,21 +1289,10 @@ const TransferForm = ({ onClose, onSuccess }) => {
                 ) : vendors.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 px-4">
                     <Building2 size={48} className="text-muted-foreground mb-4" />
-                    <h4 className="text-lg font-semibold text-foreground mb-2">No Vendors Found</h4>
+                    <h4 className="text-lg font-semibold text-foreground mb-2">No Vendors Yet</h4>
                     <p className="text-muted-foreground text-center mb-6 max-w-md">
-                      You need to register a vendor in User Management before creating a transfer.
+                      You can create the transfer without a vendor and assign one later from the Transfers list. Use the &quot;Create Transfer&quot; button below.
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        navigate('/user-management');
-                      }}
-                      className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
-                    >
-                      <UserPlus size={16} />
-                      Register a Vendor
-                    </button>
                   </div>
                 ) : (
                   <div>

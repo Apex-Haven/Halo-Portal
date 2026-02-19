@@ -24,6 +24,11 @@ const Travelers = () => {
     firstName: '',
     lastName: '',
     phone: '',
+    job_position: '',
+    company_name: '',
+    consent_email: false,
+    consent_whatsapp: false,
+    whatsapp_number: '',
     clientId: ''
   })
   const [clients, setClients] = useState([])
@@ -91,7 +96,12 @@ const Travelers = () => {
         profile: {
           firstName: formData.firstName,
           lastName: formData.lastName,
-          phone: formData.phone
+          phone: formData.phone,
+          job_position: formData.job_position || undefined,
+          company_name: formData.company_name || undefined,
+          consent_email: formData.consent_email || undefined,
+          consent_whatsapp: formData.consent_whatsapp || undefined,
+          whatsapp_number: formData.whatsapp_number || undefined
         }
       }
 
@@ -121,7 +131,12 @@ const Travelers = () => {
         profile: {
           firstName: formData.firstName,
           lastName: formData.lastName,
-          phone: formData.phone
+          phone: formData.phone,
+          job_position: formData.job_position || undefined,
+          company_name: formData.company_name || undefined,
+          consent_email: formData.consent_email || undefined,
+          consent_whatsapp: formData.consent_whatsapp || undefined,
+          whatsapp_number: formData.whatsapp_number || undefined
         }
       }
 
@@ -329,7 +344,12 @@ const Travelers = () => {
       password: '',
       firstName: traveler.profile?.firstName || '',
       lastName: traveler.profile?.lastName || '',
-      phone: traveler.profile?.phone || ''
+      phone: traveler.profile?.phone || '',
+      job_position: traveler.profile?.job_position || '',
+      company_name: traveler.profile?.company_name || '',
+      consent_email: !!traveler.profile?.consent_email,
+      consent_whatsapp: !!traveler.profile?.consent_whatsapp,
+      whatsapp_number: traveler.profile?.whatsapp_number || ''
     })
     setShowForm(true)
   }
@@ -342,6 +362,11 @@ const Travelers = () => {
       firstName: '',
       lastName: '',
       phone: '',
+      job_position: '',
+      company_name: '',
+      consent_email: false,
+      consent_whatsapp: false,
+      whatsapp_number: '',
       clientId: ''
     })
     setSelectedTraveler(null)
@@ -900,6 +925,57 @@ const Travelers = () => {
                   <Info size={12} />
                   Format: +[country code][number] (e.g., +918108457911)
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Job Position</label>
+                <input
+                  type="text"
+                  value={formData.job_position}
+                  onChange={(e) => setFormData({ ...formData, job_position: e.target.value })}
+                  placeholder="Optional"
+                  className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">Company Name</label>
+                <input
+                  type="text"
+                  value={formData.company_name}
+                  onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                  placeholder="Optional"
+                  className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+              <div className="flex flex-wrap gap-4 items-center">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.consent_email}
+                    onChange={(e) => setFormData({ ...formData, consent_email: e.target.checked })}
+                    className="rounded border-input"
+                  />
+                  <span className="text-sm text-foreground">I agree to receive email communication</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.consent_whatsapp}
+                    onChange={(e) => setFormData({ ...formData, consent_whatsapp: e.target.checked })}
+                    className="rounded border-input"
+                  />
+                  <span className="text-sm text-foreground">I consent to WhatsApp notifications</span>
+                </label>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">WhatsApp number (if different from phone)</label>
+                <input
+                  type="tel"
+                  value={formData.whatsapp_number}
+                  onChange={(e) => setFormData({ ...formData, whatsapp_number: e.target.value.replace(/\s/g, '') })}
+                  placeholder="+918108457911"
+                  className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
               </div>
             </div>
               </div>

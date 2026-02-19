@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { useTheme } from '../contexts/ThemeContext'
+import { useFeatures, FEATURE_KEYS } from '../contexts/FeaturesContext'
 import {
   LayoutDashboard,
   Truck,
@@ -32,19 +32,21 @@ const navigationItems = [
     name: 'Track Transfer',
     href: '/tracking',
     icon: Navigation,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'VENDOR', 'CLIENT', 'DRIVER', 'TRAVELER']
+    roles: ['SUPER_ADMIN', 'ADMIN', 'CLIENT', 'DRIVER', 'TRAVELER']
   },
   { 
     name: 'Flights', 
     href: '/flights', 
     icon: Plane,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'CLIENT', 'TRAVELER']
+    roles: ['SUPER_ADMIN', 'ADMIN', 'CLIENT', 'TRAVELER'],
+    featureKey: FEATURE_KEYS.FLIGHTS
   },
   { 
     name: 'Hotels & Advisory', 
     href: '/travel-advisory', 
     icon: MapPin,
-    roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER']
+    roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER'],
+    featureKey: FEATURE_KEYS.HOTELS_ADVISORY
   },
   { 
     name: 'User Management', 
@@ -79,19 +81,19 @@ const navigationItems = [
 ]
 
 const Sidebar = ({ onClose, isMobile, isCollapsed, onToggleCollapse }) => {
-  const { user, isRole } = useAuth()
-  const { theme } = useTheme()
+  const { user } = useAuth()
+  const { isFeatureEnabled } = useFeatures()
 
-  // Filter navigation items based on user role
-  // ADMIN and SUPER_ADMIN can see everything
-  // For public pages (no user), show only public items like Track Transfer
+  // Filter navigation items based on user role and feature flags
   const allowedItems = navigationItems.filter(item => {
     if (!user) {
-      // Public access - only show Track Transfer
       return item.href === '/tracking'
     }
+    if (item.featureKey && !isFeatureEnabled(item.featureKey)) {
+      return false
+    }
     if (user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') {
-      return true // Show all items for admins
+      return true
     }
     return item.roles.includes(user?.role)
   })
