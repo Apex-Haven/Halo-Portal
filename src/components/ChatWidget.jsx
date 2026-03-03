@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { MessageCircle, X, Send, Sparkles, Trash2, History, Plus, ChevronLeft, Pencil, Check } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
 
@@ -20,6 +21,14 @@ const SUGGESTION_CHIPS = [
 
 const CHAT_SESSIONS_KEY = 'halo_chat_sessions'
 const CHAT_HISTORY_KEY = 'halo_chat_history' // legacy
+
+function getStorageKey(userId) {
+  return `${CHAT_SESSIONS_KEY}_${userId || 'guest'}`
+}
+
+function getLegacyKey(userId) {
+  return userId ? null : CHAT_HISTORY_KEY
+}
 
 function generateId() {
   return `chat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
@@ -41,29 +50,33 @@ function parseMessage(m) {
   }
 }
 
-function loadChatSessions() {
+function loadChatSessions(userId) {
   try {
-    let stored = localStorage.getItem(CHAT_SESSIONS_KEY)
+    const key = getStorageKey(userId)
+    let stored = localStorage.getItem(key)
     if (!stored) {
-      // Migrate from legacy single-chat format
-      const legacy = localStorage.getItem(CHAT_HISTORY_KEY)
-      if (legacy) {
-        try {
-          const messages = JSON.parse(legacy).map(parseMessage)
-          if (messages.length > 0) {
-            const migrated = [{
-              id: generateId(),
-              title: getChatTitle(messages),
-              messages,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            }]
-            saveChatSessions(migrated)
-            localStorage.removeItem(CHAT_HISTORY_KEY)
-            return migrated
+      // Migrate from legacy single-chat format (guest only)
+      const legacyKey = getLegacyKey(userId)
+      if (legacyKey) {
+        const legacy = localStorage.getItem(legacyKey)
+        if (legacy) {
+          try {
+            const messages = JSON.parse(legacy).map(parseMessage)
+            if (messages.length > 0) {
+              const migrated = [{
+                id: generateId(),
+                title: getChatTitle(messages),
+                messages,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              }]
+              saveChatSessions(migrated, userId)
+              localStorage.removeItem(legacyKey)
+              return migrated
+            }
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore
         }
       }
       return []
@@ -81,9 +94,9 @@ function loadChatSessions() {
   }
 }
 
-function saveChatSessions(sessions) {
+function saveChatSessions(sessions, userId) {
   try {
-    localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(sessions))
+    localStorage.setItem(getStorageKey(userId), JSON.stringify(sessions))
   } catch {
     // Ignore storage errors
   }
@@ -110,26 +123,13 @@ function formatReply(text) {
 }
 
 const ChatWidget = () => {
+  const { user } = useAuth()
+  const userId = user?._id || null
+
   const [open, setOpen] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
-  const [sessions, setSessions] = useState(() => {
-    const loaded = loadChatSessions()
-    if (loaded.length === 0) {
-      const newChat = {
-        id: generateId(),
-        title: 'New chat',
-        messages: [...INITIAL_MESSAGES],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-      return [newChat]
-    }
-    return loaded
-  })
-  const [currentChatId, setCurrentChatId] = useState(() => {
-    const loaded = loadChatSessions()
-    return loaded.length > 0 ? loaded[0].id : null
-  })
+  const [sessions, setSessions] = useState([])
+  const [currentChatId, setCurrentChatId] = useState(null)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [editingChatId, setEditingChatId] = useState(null)
@@ -141,6 +141,25 @@ const ChatWidget = () => {
   const currentChat = sessions.find((s) => s.id === currentChatId) || sessions[0]
   const messages = currentChat?.messages ?? INITIAL_MESSAGES
 
+  // Load sessions for current user when userId changes (login/logout/switch)
+  useEffect(() => {
+    const loaded = loadChatSessions(userId)
+    if (loaded.length === 0) {
+      const newChat = {
+        id: generateId(),
+        title: 'New chat',
+        messages: [...INITIAL_MESSAGES],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      setSessions([newChat])
+      setCurrentChatId(newChat.id)
+    } else {
+      setSessions(loaded)
+      setCurrentChatId(loaded[0].id)
+    }
+  }, [userId])
+
   useEffect(() => {
     if (currentChatId === null && sessions.length > 0) {
       setCurrentChatId(sessions[0].id)
@@ -148,8 +167,10 @@ const ChatWidget = () => {
   }, [sessions, currentChatId])
 
   useEffect(() => {
-    saveChatSessions(sessions)
-  }, [sessions])
+    if (sessions.length > 0) {
+      saveChatSessions(sessions, userId)
+    }
+  }, [sessions, userId])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
