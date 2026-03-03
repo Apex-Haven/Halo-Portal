@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { GoogleMap, LoadScript, Marker, Polyline, InfoWindow } from '@react-google-maps/api';
+import { useJsApiLoader, GoogleMap, Marker, Polyline, InfoWindow } from '@react-google-maps/api';
 import { MapPin, Navigation, Clock, Car, Plane } from 'lucide-react';
 
 const containerStyle = {
@@ -21,10 +21,17 @@ const LiveMap = ({ transfer, driverLocation, estimatedArrival, routeHistory }) =
   const [airportLocation, setAirportLocation] = useState(null);
   const [selectedMarker, setSelectedMarker] = useState(null);
   const [routeSegments, setRouteSegments] = useState([]);
-  const [loadError, setLoadError] = useState(null);
   const mapRef = useRef(null);
   
   const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+  const { isLoaded, loadError: jsLoadError } = useJsApiLoader({
+    googleMapsApiKey: googleMapsApiKey || 'dummy',
+    id: 'halo-maps-loader'
+  });
+  const hasLoadError = jsLoadError;
+  if (typeof window !== 'undefined') {
+    window.__HALO_MAPS_KEY_LOADED__ = !!googleMapsApiKey && googleMapsApiKey !== 'your_google_maps_api_key_here';
+  }
   
   const transferStatus = transfer?.transfer_details?.transfer_status || transfer?.transfer_details?.status || 'pending';
 
@@ -291,11 +298,6 @@ const LiveMap = ({ transfer, driverLocation, estimatedArrival, routeHistory }) =
     }
   }, [mapLoaded]);
 
-  const handleLoadError = useCallback((error) => {
-    console.error('Google Maps load error:', error);
-    setLoadError(error);
-  }, []);
-
   // Check if API key is placeholder or missing
   if (googleMapsApiKey === 'your_google_maps_api_key_here' || !googleMapsApiKey || googleMapsApiKey.trim() === '') {
     return (
@@ -330,7 +332,7 @@ const LiveMap = ({ transfer, driverLocation, estimatedArrival, routeHistory }) =
   }
 
   // Show error if Google Maps failed to load
-  if (loadError) {
+  if (hasLoadError) {
     return (
       <div style={{
         height: '400px',
@@ -356,37 +358,37 @@ const LiveMap = ({ transfer, driverLocation, estimatedArrival, routeHistory }) =
     );
   }
 
-  return (
-    <LoadScript 
-      googleMapsApiKey={googleMapsApiKey} 
-      onError={handleLoadError}
-      loadingElement={
-        <div style={{
-          height: '400px',
-          backgroundColor: '#f3f4f6',
-          borderRadius: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{ textAlign: 'center', color: '#6b7280' }}>
-            <div style={{
-              width: '40px',
-              height: '40px',
-              border: '3px solid #e5e7eb',
-              borderTop: '3px solid #2563eb',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-              margin: '0 auto 16px'
-            }} />
-            <p style={{ fontSize: '16px', fontWeight: '500', margin: 0 }}>
-              Loading Live Map...
-            </p>
-          </div>
+  // Show loading while Maps API is loading
+  if (!isLoaded) {
+    return (
+      <div style={{
+        height: '400px',
+        backgroundColor: '#f3f4f6',
+        borderRadius: '12px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <div style={{ textAlign: 'center', color: '#6b7280' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '3px solid #e5e7eb',
+            borderTop: '3px solid #2563eb',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }} />
+          <p style={{ fontSize: '16px', fontWeight: '500', margin: 0 }}>
+            Loading Live Map...
+          </p>
         </div>
-      }
-    >
-      <div style={{ position: 'relative' }}>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
         <GoogleMap
           mapContainerStyle={containerStyle}
           center={center}
@@ -618,15 +620,13 @@ const LiveMap = ({ transfer, driverLocation, estimatedArrival, routeHistory }) =
             </div>
           </div>
         </div>
-      </div>
-
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
       `}</style>
-    </LoadScript>
+    </div>
   );
 };
 

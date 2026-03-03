@@ -13,7 +13,7 @@ import {
   Building2,
   Activity
 } from 'lucide-react'
-import { PIPELINE_STAGES, getPipelineCount, legMatchesStage } from '../utils/transferFlow'
+import { PIPELINE_STAGES, legMatchesStage } from '../utils/transferFlow'
 import toast from 'react-hot-toast'
 import axios from 'axios'
 import Dropdown from '../components/Dropdown'
@@ -21,11 +21,12 @@ import Dropdown from '../components/Dropdown'
 const OperationsDashboard = () => {
   const [loading, setLoading] = useState(true)
   const [transfers, setTransfers] = useState([])
-  const [stageMetrics, setStageMetrics] = useState({})
   const [syncStatus, setSyncStatus] = useState({})
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStage, setSelectedStage] = useState('all')
-  const [viewMode, setViewMode] = useState('pipeline') // 'pipeline' or 'list'
+  const [onwardViewMode, setOnwardViewMode] = useState('pipeline')
+  const [departureViewMode, setDepartureViewMode] = useState('pipeline')
+  const [refreshingSection, setRefreshingSection] = useState(null) // 'onward' | 'departure' | null
 
   // Pipeline stages: Pending → Assigned → In Progress → Completed (enroute merged into In Progress)
   const stageColors = {
@@ -51,26 +52,35 @@ const OperationsDashboard = () => {
     return () => clearInterval(interval)
   }, [])
 
-  const fetchDashboardData = async () => {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
+  const token = () => localStorage.getItem('token')
+
+  const fetchDashboardData = async (section = 'all') => {
     try {
-      setLoading(true)
-      const response = await axios.get('/api/operations/dashboard')
-      
+      if (section === 'all') setLoading(true)
+      else setRefreshingSection(section)
+
+      const response = await axios.get(`${API_BASE_URL}/operations/dashboard`, {
+        headers: { Authorization: `Bearer ${token()}` }
+      })
+
       if (response.data.success) {
         setTransfers(response.data.transfers || [])
-        setStageMetrics(response.data.stageMetrics || {})
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
       toast.error('Failed to load dashboard data')
     } finally {
-      setLoading(false)
+      if (section === 'all') setLoading(false)
+      setRefreshingSection(null)
     }
   }
 
   const fetchSyncStatus = async () => {
     try {
-      const response = await axios.get('/api/system/sync-status')
+      const response = await axios.get(`${API_BASE_URL}/system/sync-status`, {
+        headers: { Authorization: `Bearer ${token()}` }
+      })
       if (response.data.success) {
         setSyncStatus(response.data.syncStatus || {})
       }
@@ -79,49 +89,72 @@ const OperationsDashboard = () => {
     }
   }
 
-  // Expand transfers into legs (onward + return) for display
-  const expandToLegs = (list) => {
-    const legs = []
-    list.forEach(transfer => {
-      legs.push({ transfer, leg: 'onward', transferDetails: transfer.transfer_details, legLabel: 'Onward' })
-      if (transfer.return_transfer_details) {
-        legs.push({ transfer, leg: 'return', transferDetails: transfer.return_transfer_details, legLabel: 'Return' })
-      }
-    })
-    return legs
-  }
+  // Onward legs only (arrival)
+  const onwardLegs = transfers.map(transfer => ({
+    transfer,
+    leg: 'onward',
+    transferDetails: transfer.transfer_details,
+    legLabel: 'Onward'
+  }))
 
-  const allLegs = expandToLegs(transfers)
+  // Departure legs – all round-trip transfers with return leg details
+  const departureLegs = transfers
+    .filter(t => t.return_transfer_details)
+    .map(transfer => ({
+      transfer,
+      leg: 'return',
+      transferDetails: transfer.return_transfer_details,
+      legLabel: 'Departure'
+    }))
 
-  // Filter legs based on search and stage
-  const filteredLegs = allLegs.filter(({ transfer, transferDetails }) => {
-    const matchesSearch = !searchTerm || 
+  const filterLegs = (legs) => legs.filter(({ transfer, transferDetails }) => {
+    const matchesSearch = !searchTerm ||
       transfer.customer_details?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       transfer.traveler_details?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       transferDetails?.pickup_location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       transferDetails?.drop_location?.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesStage = selectedStage === 'all' || 
+
+    const matchesStage = selectedStage === 'all' ||
       legMatchesStage(transferDetails, selectedStage)
-    
+
     return matchesSearch && matchesStage
   })
 
-  // Group legs by stage for pipeline view
-  const legsByStage = pipelineStages.reduce((acc, stage) => {
-    acc[stage.id] = filteredLegs.filter(({ transferDetails }) => 
+  const filteredOnwardLegs = filterLegs(onwardLegs)
+  const filteredDepartureLegs = filterLegs(departureLegs)
+
+  // Group legs by stage for pipeline view (onward and departure separate)
+  const onwardByStage = pipelineStages.reduce((acc, stage) => {
+    acc[stage.id] = filteredOnwardLegs.filter(({ transferDetails }) =>
       legMatchesStage(transferDetails, stage.id)
     )
+    return acc
+  }, {})
+
+  const departureByStage = pipelineStages.reduce((acc, stage) => {
+    acc[stage.id] = filteredDepartureLegs.filter(({ transferDetails }) =>
+      legMatchesStage(transferDetails, stage.id)
+    )
+    return acc
+  }, {})
+
+  // Stage metrics for onward vs departure (for quick stats per section)
+  const onwardMetrics = pipelineStages.reduce((acc, stage) => {
+    acc[stage.id] = onwardByStage[stage.id]?.length || 0
+    return acc
+  }, {})
+  const departureMetrics = pipelineStages.reduce((acc, stage) => {
+    acc[stage.id] = departureByStage[stage.id]?.length || 0
     return acc
   }, {})
 
   // Handle stage change (drag and drop will be added later)
   const handleStageChange = async (transferId, newStage, leg = 'onward') => {
     try {
-      const response = await axios.put(`/api/operations/transfers/${transferId}/stage`, {
+      const response = await axios.put(`${API_BASE_URL}/operations/transfers/${transferId}/stage`, {
         stage: newStage,
         leg
-      })
+      }, { headers: { Authorization: `Bearer ${token()}` } })
       
       if (response.data.success) {
         toast.success('Transfer stage updated successfully')
@@ -138,7 +171,7 @@ const OperationsDashboard = () => {
   // Manual sync trigger
   const handleManualSync = async (type) => {
     try {
-      const response = await axios.post(`/api/system/sync-${type}`)
+      const response = await axios.post(`${API_BASE_URL}/system/sync-${type}`, {}, { headers: { Authorization: `Bearer ${token()}` } })
       if (response.data.success) {
         toast.success(`${type} sync completed successfully`)
         fetchSyncStatus()
@@ -151,10 +184,94 @@ const OperationsDashboard = () => {
     }
   }
 
+  // List table for legs
+  const LegsListTable = ({ legs, legType }) => (
+    <div className="bg-card rounded-lg border border-border">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-muted/30">
+            <tr>
+              <th className="text-left p-4 font-medium text-sm">Customer</th>
+              <th className="text-left p-4 font-medium text-sm">Traveler</th>
+              <th className="text-left p-4 font-medium text-sm">Route</th>
+              <th className="text-left p-4 font-medium text-sm">Vendor</th>
+              <th className="text-left p-4 font-medium text-sm">Driver</th>
+              <th className="text-left p-4 font-medium text-sm">Status</th>
+              <th className="text-left p-4 font-medium text-sm">Time</th>
+              <th className="text-left p-4 font-medium text-sm">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {legs.map(({ transfer, leg, transferDetails, legLabel }, idx) => {
+              const driverDetails = legType === 'return' ? transfer.return_assigned_driver_details : transfer.assigned_driver_details
+              return (
+                <tr key={`${transfer._id}-${leg}-${idx}`} className="border-t border-border hover:bg-muted/20">
+                  <td className="p-4">
+                    <div className="font-medium">{transfer.customer_details?.name || 'N/A'}</div>
+                    <div className="text-sm text-muted-foreground">{transfer.customer_details?.email}</div>
+                  </td>
+                  <td className="p-4">
+                    <div className="font-medium">{transfer.traveler_details?.name || 'Not assigned'}</div>
+                    <div className="text-sm text-muted-foreground">{transfer.traveler_details?.phone}</div>
+                  </td>
+                  <td className="p-4">
+                    <div className="text-sm">
+                      {transferDetails?.pickup_location} → {transferDetails?.drop_location}
+                      {legLabel && (
+                        <span className="ml-1 text-muted-foreground">({legLabel})</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <div className="text-sm">{transfer.vendor_details?.vendor_name || 'Not assigned'}</div>
+                  </td>
+                  <td className="p-4">
+                    <div className="text-sm">{driverDetails?.name || 'Not assigned'}</div>
+                  </td>
+                  <td className="p-4">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      (transferDetails?.transfer_status || 'pending') === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                      ['enroute', 'in_progress'].includes(transferDetails?.transfer_status || '') ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
+                      (transferDetails?.transfer_status || 'pending') === 'assigned' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
+                      'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
+                    }`}>
+                      {['enroute'].includes(transferDetails?.transfer_status || '') ? 'In Progress' : (transferDetails?.transfer_status || 'pending')}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <div className="text-sm">
+                      {transferDetails?.estimated_pickup_time
+                        ? new Date(transferDetails.estimated_pickup_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : '—'}
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <button
+                      onClick={() => window.open(`/transfers?view=${transfer._id}`, '_blank')}
+                      className="text-primary hover:text-primary/80 text-sm"
+                    >
+                      View Details
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        {legs.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground">
+            No transfers found matching your criteria
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
   // Transfer card component (per leg: onward or return)
   const TransferCard = ({ transfer, leg, transferDetails, legLabel, stage }) => {
     const StageIcon = pipelineStages.find(s => s.id === stage)?.icon || Clock
-    
+    const driverDetails = leg === 'return' ? transfer.return_assigned_driver_details : transfer.assigned_driver_details
+
     return (
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -209,11 +326,11 @@ const OperationsDashboard = () => {
               </span>
             </div>
           )}
-          {transfer.assigned_driver_details?.name && (
+          {driverDetails?.name && (
             <div className="flex items-center gap-1">
               <Truck size={12} className="text-muted-foreground" />
               <span className="text-muted-foreground">
-                {transfer.assigned_driver_details.name}
+                {driverDetails.name}
               </span>
             </div>
           )}
@@ -256,40 +373,62 @@ const OperationsDashboard = () => {
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setViewMode(viewMode === 'pipeline' ? 'list' : 'pipeline')}
-                className="px-4 py-2 bg-card border border-border rounded-lg hover:bg-muted transition-colors"
+                onClick={() => fetchDashboardData('all')}
+                disabled={loading}
+                className="p-2 bg-card border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+                title="Refresh all data"
               >
-                {viewMode === 'pipeline' ? 'List View' : 'Pipeline View'}
-              </button>
-              <button
-                onClick={fetchDashboardData}
-                className="p-2 bg-card border border-border rounded-lg hover:bg-muted transition-colors"
-                title="Refresh data"
-              >
-                <RefreshCw size={18} />
+                <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
               </button>
             </div>
           </div>
 
-          {/* Quick Stats */}
-          <div className="grid grid-cols-4 gap-3 mb-6">
-            {pipelineStages.map(stage => {
-              const Icon = stage.icon
-              const count = getPipelineCount(stageMetrics, stage.id)
-              return (
-                <div key={stage.id} className="bg-card rounded-lg border border-border p-3 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground truncate">{stage.label}</p>
-                      <p className="text-xl font-bold text-foreground">{count}</p>
-                    </div>
-                    <div className={`p-2 rounded-lg shrink-0 ${stage.color}`}>
-                      <Icon size={18} className="text-foreground" />
+          {/* Quick Stats – Onward */}
+          <div className="mb-4">
+            <h3 className="text-sm font-medium text-muted-foreground mb-2">Onward (Arrival)</h3>
+            <div className="grid grid-cols-4 gap-3">
+              {pipelineStages.map(stage => {
+                const Icon = stage.icon
+                const count = onwardMetrics[stage.id] || 0
+                return (
+                  <div key={`onward-${stage.id}`} className="bg-card rounded-lg border border-border p-3 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground truncate">{stage.label}</p>
+                        <p className="text-xl font-bold text-foreground">{count}</p>
+                      </div>
+                      <div className={`p-2 rounded-lg shrink-0 ${stage.color}`}>
+                        <Icon size={18} className="text-foreground" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Quick Stats – Departure (return legs, onward completed) */}
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-muted-foreground mb-2">Departure (Return)</h3>
+            <div className="grid grid-cols-4 gap-3">
+              {pipelineStages.map(stage => {
+                const Icon = stage.icon
+                const count = departureMetrics[stage.id] || 0
+                return (
+                  <div key={`departure-${stage.id}`} className="bg-card rounded-lg border border-border p-3 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground truncate">{stage.label}</p>
+                        <p className="text-xl font-bold text-foreground">{count}</p>
+                      </div>
+                      <div className={`p-2 rounded-lg shrink-0 ${stage.color}`}>
+                        <Icon size={18} className="text-foreground" />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Sync Status */}
@@ -380,7 +519,7 @@ const OperationsDashboard = () => {
                 { value: 'all', label: 'All Stages' },
                 ...pipelineStages.map(stage => ({
                   value: stage.id,
-                  label: `${stage.label} (${getPipelineCount(stageMetrics, stage.id)})`
+                  label: `${stage.label} (${(onwardMetrics[stage.id] || 0) + (departureMetrics[stage.id] || 0)})`
                 }))
               ]}
               placeholder="All Stages"
@@ -389,123 +528,141 @@ const OperationsDashboard = () => {
           </div>
         </div>
 
-        {/* Pipeline View */}
-        {viewMode === 'pipeline' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {pipelineStages.map(stage => {
-              const StageIcon = stage.icon
-              return (
-              <div key={stage.id} className={`${stage.color} rounded-lg border p-4`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <StageIcon size={18} />
-                    <h3 className="font-semibold">{stage.label}</h3>
-                    <span className="bg-background/50 px-2 py-1 rounded text-xs font-medium">
-                      {legsByStage[stage.id]?.length || 0}
-                    </span>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mb-4">{stage.description}</p>
-                
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {legsByStage[stage.id]?.map(({ transfer, leg, transferDetails, legLabel }, idx) => (
-                    <TransferCard
-                      key={`${transfer._id}-${leg}-${idx}`}
-                      transfer={transfer}
-                      leg={leg}
-                      transferDetails={transferDetails}
-                      legLabel={legLabel}
-                      stage={stage.id}
-                    />
-                  ))}
-                  {(!legsByStage[stage.id] || legsByStage[stage.id].length === 0) && (
-                    <div className="text-center py-8 text-muted-foreground text-sm">
-                      No transfers in this stage
-                    </div>
-                  )}
-                </div>
-              </div>
-            )})}
-          </div>
-        ) : (
-          /* List View */
-          <div className="bg-card rounded-lg border border-border">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-muted/30">
-                  <tr>
-                    <th className="text-left p-4 font-medium text-sm">Customer</th>
-                    <th className="text-left p-4 font-medium text-sm">Traveler</th>
-                    <th className="text-left p-4 font-medium text-sm">Route</th>
-                    <th className="text-left p-4 font-medium text-sm">Vendor</th>
-                    <th className="text-left p-4 font-medium text-sm">Driver</th>
-                    <th className="text-left p-4 font-medium text-sm">Status</th>
-                    <th className="text-left p-4 font-medium text-sm">Time</th>
-                    <th className="text-left p-4 font-medium text-sm">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLegs.map(({ transfer, leg, transferDetails, legLabel }, idx) => (
-                    <tr key={`${transfer._id}-${leg}-${idx}`} className="border-t border-border hover:bg-muted/20">
-                      <td className="p-4">
-                        <div className="font-medium">{transfer.customer_details?.name || 'N/A'}</div>
-                        <div className="text-sm text-muted-foreground">{transfer.customer_details?.email}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="font-medium">{transfer.traveler_details?.name || 'Not assigned'}</div>
-                        <div className="text-sm text-muted-foreground">{transfer.traveler_details?.phone}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm">
-                          {transferDetails?.pickup_location} → {transferDetails?.drop_location}
-                          {legLabel && (
-                            <span className="ml-1 text-muted-foreground">({legLabel})</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm">{transfer.vendor_details?.vendor_name || 'Not assigned'}</div>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm">{transfer.assigned_driver_details?.name || 'Not assigned'}</div>
-                      </td>
-                      <td className="p-4">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          (transferDetails?.transfer_status || 'pending') === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                          ['enroute', 'in_progress'].includes(transferDetails?.transfer_status || '') ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
-                          (transferDetails?.transfer_status || 'pending') === 'assigned' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                          'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-                        }`}>
-                          {['enroute'].includes(transferDetails?.transfer_status || '') ? 'In Progress' : (transferDetails?.transfer_status || 'pending')}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm">
-                          {transferDetails?.estimated_pickup_time
-                            ? new Date(transferDetails.estimated_pickup_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                            : '—'}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <button
-                          onClick={() => window.open(`/transfers?view=${transfer._id}`, '_blank')}
-                          className="text-primary hover:text-primary/80 text-sm"
-                        >
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {filteredLegs.length === 0 && (
-                <div className="text-center py-12 text-muted-foreground">
-                  No transfers found matching your criteria
-                </div>
-              )}
+        {/* Onward Section */}
+        <div className="mb-10 relative">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-foreground">Onward (Arrival)</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fetchDashboardData('onward')}
+                disabled={refreshingSection === 'onward'}
+                className="p-1.5 bg-card border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+                title="Refresh Onward"
+              >
+                <RefreshCw size={16} className={refreshingSection === 'onward' ? 'animate-spin' : ''} />
+              </button>
+              <button
+                onClick={() => setOnwardViewMode(onwardViewMode === 'pipeline' ? 'list' : 'pipeline')}
+                className="px-3 py-1.5 text-sm bg-card border border-border rounded-lg hover:bg-muted transition-colors"
+              >
+                {onwardViewMode === 'pipeline' ? 'List View' : 'Pipeline View'}
+              </button>
             </div>
           </div>
-        )}
+          {refreshingSection === 'onward' && (
+            <div className="absolute inset-0 bg-background/60 flex items-center justify-center z-10 rounded-lg min-h-[200px]">
+              <RefreshCw size={24} className="animate-spin text-primary" />
+            </div>
+          )}
+          {onwardViewMode === 'pipeline' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              {pipelineStages.map(stage => {
+                const StageIcon = stage.icon
+                return (
+                  <div key={`onward-${stage.id}`} className={`${stage.color} rounded-lg border p-4`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <StageIcon size={18} />
+                        <h3 className="font-semibold">{stage.label}</h3>
+                        <span className="bg-background/50 px-2 py-1 rounded text-xs font-medium">
+                          {onwardByStage[stage.id]?.length || 0}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-4">{stage.description}</p>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {onwardByStage[stage.id]?.map(({ transfer, leg, transferDetails, legLabel }, idx) => (
+                        <TransferCard
+                          key={`${transfer._id}-${leg}-${idx}`}
+                          transfer={transfer}
+                          leg={leg}
+                          transferDetails={transferDetails}
+                          legLabel={legLabel}
+                          stage={stage.id}
+                        />
+                      ))}
+                      {(!onwardByStage[stage.id] || onwardByStage[stage.id].length === 0) && (
+                        <div className="text-center py-8 text-muted-foreground text-sm">
+                          No transfers in this stage
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <LegsListTable legs={filteredOnwardLegs} legType="onward" />
+          )}
+        </div>
+
+        {/* Departure Section – only transfers with completed onward */}
+        <div className="relative">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-foreground">Departure (Return)</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fetchDashboardData('departure')}
+                disabled={refreshingSection === 'departure'}
+                className="p-1.5 bg-card border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+                title="Refresh Departure"
+              >
+                <RefreshCw size={16} className={refreshingSection === 'departure' ? 'animate-spin' : ''} />
+              </button>
+              <button
+                onClick={() => setDepartureViewMode(departureViewMode === 'pipeline' ? 'list' : 'pipeline')}
+                className="px-3 py-1.5 text-sm bg-card border border-border rounded-lg hover:bg-muted transition-colors"
+              >
+                {departureViewMode === 'pipeline' ? 'List View' : 'Pipeline View'}
+              </button>
+            </div>
+          </div>
+          {refreshingSection === 'departure' && (
+            <div className="absolute inset-0 bg-background/60 flex items-center justify-center z-10 rounded-lg min-h-[200px]">
+              <RefreshCw size={24} className="animate-spin text-primary" />
+            </div>
+          )}
+          {departureViewMode === 'pipeline' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              {pipelineStages.map(stage => {
+                const StageIcon = stage.icon
+                return (
+                  <div key={`departure-${stage.id}`} className={`${stage.color} rounded-lg border p-4`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <StageIcon size={18} />
+                        <h3 className="font-semibold">{stage.label}</h3>
+                        <span className="bg-background/50 px-2 py-1 rounded text-xs font-medium">
+                          {departureByStage[stage.id]?.length || 0}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-4">{stage.description}</p>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {departureByStage[stage.id]?.map(({ transfer, leg, transferDetails, legLabel }, idx) => (
+                        <TransferCard
+                          key={`${transfer._id}-${leg}-${idx}`}
+                          transfer={transfer}
+                          leg={leg}
+                          transferDetails={transferDetails}
+                          legLabel={legLabel}
+                          stage={stage.id}
+                        />
+                      ))}
+                      {(!departureByStage[stage.id] || departureByStage[stage.id].length === 0) && (
+                        <div className="text-center py-8 text-muted-foreground text-sm">
+                          No transfers in this stage
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <LegsListTable legs={filteredDepartureLegs} legType="return" />
+          )}
+        </div>
       </div>
     </div>
   )

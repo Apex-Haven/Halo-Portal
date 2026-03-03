@@ -43,11 +43,14 @@ const TransfersEnhanced = () => {
   const [transferSyncCustomerId, setTransferSyncCustomerId] = useState('')
   const [showBulkVendorModal, setShowBulkVendorModal] = useState(false)
   const [showBulkDriverModal, setShowBulkDriverModal] = useState(false)
+  const [showBulkReturnDriverModal, setShowBulkReturnDriverModal] = useState(false)
   const [vendors, setVendors] = useState([])
   const [drivers, setDrivers] = useState([])
   const [bulkVendorId, setBulkVendorId] = useState('')
   const [bulkVendorIdForDriver, setBulkVendorIdForDriver] = useState('')
   const [bulkDriverId, setBulkDriverId] = useState('')
+  const [bulkReturnDriverId, setBulkReturnDriverId] = useState('')
+  const [bulkVendorIdForReturnDriver, setBulkVendorIdForReturnDriver] = useState('')
   const [loadingVendors, setLoadingVendors] = useState(false)
   const [loadingDrivers, setLoadingDrivers] = useState(false)
   const [clients, setClients] = useState([])
@@ -81,7 +84,7 @@ const TransfersEnhanced = () => {
   }, [searchTerm, statusFilter])
 
   useEffect(() => {
-    if ((showBulkVendorModal || showBulkDriverModal) && canManageTransfers) {
+    if ((showBulkVendorModal || showBulkDriverModal || showBulkReturnDriverModal) && canManageTransfers) {
       setLoadingVendors(true)
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
       const token = localStorage.getItem('token')
@@ -93,7 +96,7 @@ const TransfersEnhanced = () => {
           .finally(() => setLoadingVendors(false))
       } else setLoadingVendors(false)
     }
-  }, [showBulkVendorModal, showBulkDriverModal, canManageTransfers])
+  }, [showBulkVendorModal, showBulkDriverModal, showBulkReturnDriverModal, canManageTransfers])
 
   useEffect(() => {
     if (showBulkDriverModal && bulkVendorIdForDriver) {
@@ -112,6 +115,56 @@ const TransfersEnhanced = () => {
       setBulkDriverId('')
     }
   }, [showBulkDriverModal, bulkVendorIdForDriver])
+
+  // When Assign Driver modal opens, pre-select vendor if all selected transfers have the same vendor
+  useEffect(() => {
+    if (showBulkDriverModal && selectedTransfers.length > 0) {
+      const selectedObjs = transfers.filter(t => selectedTransfers.includes(t._id))
+      const withVendor = selectedObjs.filter(t => t.vendor_details?.vendor_id)
+      const withoutVendor = selectedObjs.filter(t => !t.vendor_details?.vendor_id)
+      if (withoutVendor.length === 0 && withVendor.length > 0) {
+        const vendorIds = [...new Set(withVendor.map(t => t.vendor_details.vendor_id))]
+        if (vendorIds.length === 1) {
+          setBulkVendorIdForDriver(vendorIds[0])
+        } else {
+          setBulkVendorIdForDriver('')
+        }
+      } else {
+        setBulkVendorIdForDriver('')
+      }
+    }
+  }, [showBulkDriverModal, selectedTransfers, transfers])
+
+  useEffect(() => {
+    if (showBulkReturnDriverModal && bulkVendorIdForReturnDriver) {
+      setLoadingDrivers(true)
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
+      const token = localStorage.getItem('token')
+      if (token) {
+        fetch(`${API_BASE_URL}/drivers?vendorId=${bulkVendorIdForReturnDriver}`, { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => r.json())
+          .then(data => setDrivers(data.success && Array.isArray(data.data) ? data.data : []))
+          .catch(() => setDrivers([]))
+          .finally(() => setLoadingDrivers(false))
+      } else setLoadingDrivers(false)
+    } else {
+      setDrivers([])
+      setBulkReturnDriverId('')
+    }
+  }, [showBulkReturnDriverModal, bulkVendorIdForReturnDriver])
+
+  useEffect(() => {
+    if (showBulkReturnDriverModal && selectedTransfers.length > 0) {
+      const selectedObjs = transfers.filter(t => selectedTransfers.includes(t._id))
+      const eligible = selectedObjs.filter(t => t.return_transfer_details && (t.transfer_details?.transfer_status || 'pending') === 'completed')
+      const withVendor = eligible.filter(t => t.vendor_details?.vendor_id)
+      if (withVendor.length > 0) {
+        const vendorIds = [...new Set(withVendor.map(t => (t.vendor_details?.vendor_id || '').toString()).filter(Boolean))]
+        if (vendorIds.length === 1) setBulkVendorIdForReturnDriver(vendorIds[0])
+        else setBulkVendorIdForReturnDriver('')
+      } else setBulkVendorIdForReturnDriver('')
+    }
+  }, [showBulkReturnDriverModal, selectedTransfers, transfers])
 
   useEffect(() => {
     if (showTransferSyncModal && (isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER'))) {
@@ -296,18 +349,19 @@ const TransfersEnhanced = () => {
     }
   }
 
-  // Bulk status update
-  const handleBulkStatusUpdate = async (newStatus) => {
+  // Bulk status update (leg: 'onward' | 'return')
+  const handleBulkStatusUpdate = async (newStatus, leg = 'onward') => {
     if (selectedTransfers.length === 0) return
-    
+
     setBulkLoading(true)
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const token = localStorage.getItem('token');
-      
+
       const response = await axios.put(`${API_BASE_URL}/bulk-operations/status`, {
         transferIds: selectedTransfers,
-        newStatus
+        newStatus,
+        leg
       }, {
         headers: {
           'Content-Type': 'application/json',
@@ -351,17 +405,63 @@ const TransfersEnhanced = () => {
 
   const handleBulkDriverAssign = async () => {
     if (selectedTransfers.length === 0 || !bulkDriverId) return
+    const selectedDriver = drivers.find(d => (d._id || d.id) === bulkDriverId)
+    if (!selectedDriver) {
+      toast.error('Please select a valid driver')
+      return
+    }
+    const driverName = [selectedDriver.profile?.firstName, selectedDriver.profile?.lastName].filter(Boolean).join(' ') || selectedDriver.username || 'Driver'
     setBulkLoading(true)
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
       const token = localStorage.getItem('token')
-      await axios.put(`${API_BASE_URL}/bulk-operations/driver`, { transferIds: selectedTransfers, driverId: bulkDriverId }, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
+      const payload = {
+        transferIds: selectedTransfers,
+        driverId: bulkDriverId,
+        driverName,
+        driverPhone: selectedDriver.profile?.phone || selectedDriver.email || '',
+        vehicleType: selectedDriver.driverDetails?.vehicleType || 'sedan',
+        vehicleNumber: selectedDriver.driverDetails?.vehicleNumber || 'TBD'
+      }
+      await axios.put(`${API_BASE_URL}/bulk-operations/driver`, payload, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
       toast.success(`Driver assigned to ${selectedTransfers.length} transfer(s)`)
       setSelectedTransfers([])
       setShowBulkDriverModal(false)
       fetchTransfers()
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to assign driver')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  const handleBulkReturnDriverAssign = async () => {
+    if (selectedTransfers.length === 0 || !bulkReturnDriverId) return
+    const selectedDriver = drivers.find(d => (d._id || d.id) === bulkReturnDriverId)
+    if (!selectedDriver) {
+      toast.error('Please select a valid driver')
+      return
+    }
+    const driverName = [selectedDriver.profile?.firstName, selectedDriver.profile?.lastName].filter(Boolean).join(' ') || selectedDriver.username || 'Driver'
+    setBulkLoading(true)
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
+      const token = localStorage.getItem('token')
+      const payload = {
+        transferIds: selectedTransfers,
+        driverId: bulkReturnDriverId,
+        driverName,
+        driverPhone: selectedDriver.profile?.phone || selectedDriver.email || '',
+        vehicleType: selectedDriver.driverDetails?.vehicleType || 'sedan',
+        vehicleNumber: selectedDriver.driverDetails?.vehicleNumber || 'TBD'
+      }
+      const response = await axios.put(`${API_BASE_URL}/bulk-operations/return-driver`, payload, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
+      toast.success(response.data?.message || `Return driver assigned to ${response.data?.updatedCount || 0} transfer(s)`)
+      setSelectedTransfers([])
+      setShowBulkReturnDriverModal(false)
+      fetchTransfers()
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to assign return driver')
     } finally {
       setBulkLoading(false)
     }
@@ -883,26 +983,28 @@ const TransfersEnhanced = () => {
                   return (
                     <div key={transfer._id} className="relative flex items-start gap-4">
                       {/* Timeline node – status icon (enroute = In Progress) */}
-                      <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                      <div className={`relative z-10 w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-sm ring-2 ring-background ${
                         status === 'completed' ? 'bg-green-500 text-white' :
                         ['in_progress', 'enroute'].includes(status) ? 'bg-blue-500 text-white' :
                         status === 'assigned' ? 'bg-purple-500 text-white' :
                         'bg-gray-500 text-white'
                       }`}>
                         {status === 'completed' ? (
-                          <CheckCircle size={14} strokeWidth={2.5} />
+                          <CheckCircle size={16} strokeWidth={2.5} />
                         ) : ['in_progress', 'enroute'].includes(status) ? (
-                          <Navigation size={14} strokeWidth={2.5} />
+                          <Navigation size={16} strokeWidth={2.5} />
                         ) : status === 'assigned' ? (
-                          <User size={14} strokeWidth={2.5} />
+                          <User size={16} strokeWidth={2.5} />
                         ) : (
-                          <Clock size={14} strokeWidth={2.5} />
+                          <Clock size={16} strokeWidth={2.5} />
                         )}
                       </div>
                       
                       {/* Timeline content */}
                       <div className="flex-1 min-w-0">
-                        <div className="bg-card rounded-lg border border-border p-4 shadow-sm">
+                        <div className={`bg-card rounded-lg border border-border p-4 shadow-sm transition-all ${
+                          selectedTransfers.includes(transfer._id) ? 'ring-2 ring-primary ring-offset-2' : ''
+                        }`}>
                           {/* Header */}
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-3">
@@ -1187,16 +1289,16 @@ const TransfersEnhanced = () => {
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {/* Stats – single row */}
+          <div className="flex flex-nowrap gap-3 sm:gap-4 mb-6 overflow-x-auto pb-1 -mx-1">
             {statusOptions.map(option => {
               const count = filteredTransfers.filter(t => 
                 (t.transfer_details?.transfer_status || 'pending') === option.value
               ).length
               return (
-                <div key={option.value} className="bg-card rounded-lg border border-border p-4">
-                  <div className="text-2xl font-bold text-foreground">{count}</div>
-                  <div className="text-sm text-muted-foreground">{option.label}</div>
+                <div key={option.value} className="bg-card rounded-lg border border-border p-3 sm:p-4 flex-shrink-0 min-w-[100px] sm:min-w-[120px]">
+                  <div className="text-xl sm:text-2xl font-bold text-foreground">{count}</div>
+                  <div className="text-xs sm:text-sm text-muted-foreground">{option.label}</div>
                 </div>
               )
             })}
@@ -1241,6 +1343,18 @@ const TransfersEnhanced = () => {
                 >
                   Assign Driver
                 </button>
+                {(() => {
+                  const eligibleReturn = transfers.filter(t => selectedTransfers.includes(t._id) && t.return_transfer_details && (t.transfer_details?.transfer_status || 'pending') === 'completed')
+                  return eligibleReturn.length > 0 && (
+                    <button
+                      onClick={() => setShowBulkReturnDriverModal(true)}
+                      disabled={bulkLoading}
+                      className="px-3 py-1.5 bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-50 text-sm"
+                    >
+                      Assign Return Driver ({eligibleReturn.length})
+                    </button>
+                  )
+                })()}
                 <button
                   onClick={() => setShowBulkDeleteConfirm(true)}
                   disabled={bulkLoading}
@@ -1558,7 +1672,7 @@ const TransfersEnhanced = () => {
 
         {/* Bulk Vendor Modal */}
         {showBulkVendorModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card rounded-lg border border-border p-6 max-w-md w-full mx-4">
               <h3 className="text-lg font-semibold mb-4">Assign Vendor to {selectedTransfers.length} Transfers</h3>
               <div className="space-y-4">
@@ -1603,54 +1717,78 @@ const TransfersEnhanced = () => {
         )}
 
         {/* Bulk Driver Modal */}
-        {showBulkDriverModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        {showBulkDriverModal && (() => {
+          const selectedObjs = transfers.filter(t => selectedTransfers.includes(t._id))
+          const withVendor = selectedObjs.filter(t => t.vendor_details?.vendor_id)
+          const withoutVendor = selectedObjs.filter(t => !t.vendor_details?.vendor_id)
+          const hasVendorMissing = withoutVendor.length > 0
+          const vendorIds = [...new Set(withVendor.map(t => t.vendor_details.vendor_id))]
+          const allSameVendor = vendorIds.length === 1
+          const hasMixedVendors = vendorIds.length > 1
+          return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card rounded-lg border border-border p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold mb-4">Assign Driver to {selectedTransfers.length} Transfers</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Select Vendor</label>
-                  <Dropdown
-                    name="bulkVendorForDriver"
-                    value={bulkVendorIdForDriver}
-                    onChange={(e) => setBulkVendorIdForDriver(e.target.value)}
-                    options={[
-                      { value: '', label: 'Select a vendor first...' },
-                      ...vendors.map(v => ({
-                        value: v._id || v.id,
-                        label: v.vendorDetails?.companyName || v.username || v.email || 'Vendor'
-                      }))
-                    ]}
-                    placeholder="Select a vendor"
-                    minWidth="100%"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Select Driver</label>
-                  <Dropdown
-                    name="bulkDriver"
-                    value={bulkDriverId}
-                    onChange={(e) => setBulkDriverId(e.target.value)}
-                    options={[
-                      { value: '', label: !bulkVendorIdForDriver ? 'Select vendor first' : (loadingDrivers ? 'Loading drivers...' : 'Select a driver') },
-                      ...drivers.map(d => {
-                        const name = [d.profile?.firstName, d.profile?.lastName].filter(Boolean).join(' ') || d.username || ''
-                        const vehicle = d.driverDetails?.vehicleNumber ? ` - ${d.driverDetails.vehicleNumber}` : ''
-                        return { value: d._id || d.id, label: `${name}${vehicle}` }
-                      })
-                    ]}
-                    placeholder={!bulkVendorIdForDriver ? 'Select vendor first' : (loadingDrivers ? 'Loading...' : 'Select driver')}
-                    minWidth="100%"
-                  />
-                  {bulkVendorIdForDriver && drivers.length === 0 && !loadingDrivers && (
-                    <p className="text-xs text-muted-foreground mt-1">No drivers found for this vendor.</p>
-                  )}
-                </div>
+              <h3 className="text-lg font-semibold mb-4">Assign Driver to {selectedTransfers.length} Transfer{selectedTransfers.length !== 1 ? 's' : ''}</h3>
+              {/* Vendor status summary */}
+              <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border text-sm">
+                {hasVendorMissing ? (
+                  <div className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
+                    <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Vendor required first</p>
+                      <p className="text-muted-foreground mt-1">
+                        {withoutVendor.length} transfer{withoutVendor.length !== 1 ? 's' : ''} {withoutVendor.length !== 1 ? 'are' : 'is'} missing a vendor. Please assign a vendor to {withoutVendor.length !== 1 ? 'these transfers' : 'this transfer'} before adding a driver.
+                      </p>
+                    </div>
+                  </div>
+                ) : hasMixedVendors ? (
+                  <div className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
+                    <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Different vendors assigned</p>
+                      <p className="text-muted-foreground mt-1">
+                        Selected transfers have different vendors. Please select transfers with the same vendor to assign a driver in bulk.
+                      </p>
+                    </div>
+                  </div>
+                ) : withVendor.length > 0 && (
+                  <div className="text-foreground">
+                    <p className="font-medium text-green-700 dark:text-green-300">Vendor assigned</p>
+                    <p className="text-muted-foreground mt-1">
+                      {withVendor[0].vendor_details?.vendor_name || 'Vendor'}
+                    </p>
+                  </div>
+                )}
               </div>
+              {!hasVendorMissing && !hasMixedVendors && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Select Driver</label>
+                    <Dropdown
+                      name="bulkDriver"
+                      value={bulkDriverId}
+                      onChange={(e) => setBulkDriverId(e.target.value)}
+                      options={[
+                        { value: '', label: !bulkVendorIdForDriver ? 'Loading vendor...' : (loadingDrivers ? 'Loading drivers...' : 'Select a driver') },
+                        ...drivers.map(d => {
+                          const name = [d.profile?.firstName, d.profile?.lastName].filter(Boolean).join(' ') || d.username || ''
+                          const vehicle = d.driverDetails?.vehicleNumber ? ` - ${d.driverDetails.vehicleNumber}` : ''
+                          return { value: d._id || d.id, label: `${name}${vehicle}` }
+                        })
+                      ]}
+                      placeholder={!bulkVendorIdForDriver ? 'Loading...' : (loadingDrivers ? 'Loading...' : 'Select driver')}
+                      minWidth="100%"
+                    />
+                    {bulkVendorIdForDriver && drivers.length === 0 && !loadingDrivers && (
+                      <p className="text-xs text-muted-foreground mt-1">No drivers found for this vendor.</p>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-3 mt-4">
                 <button
                   onClick={handleBulkDriverAssign}
-                  disabled={bulkLoading || !bulkDriverId || loadingDrivers}
+                  disabled={bulkLoading || hasVendorMissing || hasMixedVendors || !bulkDriverId || loadingDrivers}
                   className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
                 >
                   {bulkLoading ? 'Assigning...' : 'Assign Driver'}
@@ -1664,11 +1802,94 @@ const TransfersEnhanced = () => {
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
+
+        {/* Bulk Return Driver Modal */}
+        {showBulkReturnDriverModal && (() => {
+          const eligible = transfers.filter(t => selectedTransfers.includes(t._id) && t.return_transfer_details && (t.transfer_details?.transfer_status || 'pending') === 'completed')
+          const withVendor = eligible.filter(t => t.vendor_details?.vendor_id)
+          const vendorIds = [...new Set(withVendor.map(t => (t.vendor_details?.vendor_id || '').toString()).filter(Boolean))]
+          const allSameVendor = vendorIds.length === 1
+          const hasMixedVendors = vendorIds.length > 1
+          return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
+            <div className="bg-card rounded-lg border border-border p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold mb-4">Assign Return Driver to {eligible.length} Transfer{eligible.length !== 1 ? 's' : ''}</h3>
+              {eligible.length === 0 ? (
+                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
+                  <p>No eligible transfers. Only round-trip transfers with <strong>onward leg completed</strong> can have a return driver assigned.</p>
+                  <p className="mt-2">Update status to &quot;Completed&quot; for the onward leg first.</p>
+                </div>
+              ) : hasMixedVendors ? (
+                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 text-amber-800 text-sm">
+                  Selected transfers have different vendors. Please select transfers with the same vendor.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Vendor</label>
+                    <Dropdown
+                      name="bulkVendorForReturnDriver"
+                      value={bulkVendorIdForReturnDriver}
+                      onChange={(e) => setBulkVendorIdForReturnDriver(e.target.value)}
+                      options={[
+                        { value: '', label: 'Select vendor...' },
+                        ...vendors.filter(v => vendorIds.includes((v._id || v.id).toString())).map(v => ({
+                          value: (v._id || v.id).toString(),
+                          label: v.vendorDetails?.companyName || v.username || v.email || 'Vendor'
+                        }))
+                      ]}
+                      placeholder="Select vendor"
+                      minWidth="100%"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Select Return Driver</label>
+                    <Dropdown
+                      name="bulkReturnDriver"
+                      value={bulkReturnDriverId}
+                      onChange={(e) => setBulkReturnDriverId(e.target.value)}
+                      options={[
+                        { value: '', label: !bulkVendorIdForReturnDriver ? 'Select vendor...' : (loadingDrivers ? 'Loading drivers...' : 'Select a driver') },
+                        ...drivers.map(d => {
+                          const name = [d.profile?.firstName, d.profile?.lastName].filter(Boolean).join(' ') || d.username || ''
+                          const vehicle = d.driverDetails?.vehicleNumber ? ` - ${d.driverDetails.vehicleNumber}` : ''
+                          return { value: d._id || d.id, label: `${name}${vehicle}` }
+                        })
+                      ]}
+                      placeholder={!bulkVendorIdForReturnDriver ? 'Loading...' : (loadingDrivers ? 'Loading...' : 'Select driver')}
+                      minWidth="100%"
+                    />
+                    {!bulkVendorIdForReturnDriver && (
+                      <p className="text-xs text-muted-foreground mt-1">Select vendor first to load drivers.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={handleBulkReturnDriverAssign}
+                  disabled={bulkLoading || eligible.length === 0 || hasMixedVendors || !bulkVendorIdForReturnDriver || !bulkReturnDriverId || loadingDrivers}
+                  className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {bulkLoading ? 'Assigning...' : 'Assign Return Driver'}
+                </button>
+                <button
+                  onClick={() => setShowBulkReturnDriverModal(false)}
+                  className="flex-1 px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+          )
+        })()}
 
         {/* Bulk Delete Confirmation Modal */}
         {showBulkDeleteConfirm && selectedTransfers.length > 0 && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -1715,7 +1936,7 @@ const TransfersEnhanced = () => {
 
         {/* Delete Single Transfer Confirmation Modal */}
         {showDeleteConfirm && transferToDelete && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -1764,37 +1985,91 @@ const TransfersEnhanced = () => {
         )}
 
         {/* Bulk Status Modal */}
-        {showBulkStatusModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-card rounded-lg border border-border p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold mb-4">Update Status for {selectedTransfers.length} Transfers</h3>
-              <div className="space-y-2">
-                {statusOptions.map(option => (
-                  <button
-                    key={option.value}
-                    onClick={() => handleBulkStatusUpdate(option.value)}
-                    disabled={bulkLoading}
-                    className={`w-full p-3 rounded-lg border border-border text-left hover:bg-muted transition-colors ${option.color}`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+        {showBulkStatusModal && (() => {
+          const selectedObjs = transfers.filter(t => selectedTransfers.includes(t._id))
+          const withReturn = selectedObjs.filter(t => t.return_transfer_details)
+          return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
+            <div className="bg-card rounded-lg border border-border p-6 max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold mb-4">Update Status for {selectedTransfers.length} Transfer{selectedTransfers.length !== 1 ? 's' : ''}</h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {/* Onward (Arrival) – left */}
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                    <Plane size={14} />
+                    Onward (Arrival)
+                  </h4>
+                  <p className="text-xs text-muted-foreground mb-2">Update arrival leg only</p>
+                  <div className="space-y-2">
+                    {statusOptions.map(option => (
+                      <button
+                        key={`onward-${option.value}`}
+                        onClick={() => handleBulkStatusUpdate(option.value, 'onward')}
+                        disabled={bulkLoading}
+                        className={`w-full p-3 rounded-lg border text-left font-medium transition-all duration-200
+                          hover:scale-[1.02] hover:shadow-md hover:border-foreground/20
+                          focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2
+                          active:scale-[0.99] active:shadow-sm
+                          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none
+                          ${option.color}`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Return (Departure) – right */}
+                <div>
+                  <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                    <Plane size={14} className="rotate-180" />
+                    Return (Departure)
+                  </h4>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {withReturn.length > 0
+                      ? `Update return leg only (${withReturn.length} of ${selectedTransfers.length} have return)`
+                      : 'No selected transfers have a return leg'}
+                  </p>
+                  <div className="space-y-2">
+                    {statusOptions.map(option => (
+                      <button
+                        key={`return-${option.value}`}
+                        onClick={() => handleBulkStatusUpdate(option.value, 'return')}
+                        disabled={bulkLoading || withReturn.length === 0}
+                        className={`w-full p-3 rounded-lg border text-left font-medium transition-all duration-200
+                          hover:scale-[1.02] hover:shadow-md hover:border-foreground/20
+                          focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2
+                          active:scale-[0.99] active:shadow-sm
+                          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none
+                          ${option.color}`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-3 mt-4">
+
+              <div className="flex gap-3 mt-6">
                 <button
                   onClick={() => setShowBulkStatusModal(false)}
-                  className="flex-1 px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80"
+                  className="flex-1 px-4 py-2 bg-muted text-foreground rounded-lg font-medium
+                    hover:bg-muted/80 hover:shadow-sm transition-all duration-200
+                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2
+                    active:scale-[0.99]"
                 >
                   Cancel
                 </button>
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* Simple Details Modal */}
         {showDetailsModal && selectedTransfer && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card rounded-lg border border-border p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
               <h3 className="text-lg font-semibold mb-4">Transfer Details</h3>
               <div className="space-y-4">
@@ -1852,7 +2127,15 @@ const TransfersEnhanced = () => {
                 </div>
 
                 {/* Return Transfer Section */}
-                {(selectedTransfer.return_transfer_details || selectedTransfer.return_flight_details) && (
+                {(selectedTransfer.return_transfer_details || selectedTransfer.return_flight_details) && (() => {
+                  const hasReturnTransfer = selectedTransfer.return_transfer_details || selectedTransfer.return_flight_details
+                  const hasReturnFlight = selectedTransfer.return_flight_details?.flight_no && 
+                    selectedTransfer.return_flight_details.flight_no !== 'XX000' && 
+                    selectedTransfer.return_flight_details.flight_no !== 'TBD'
+                  const isReturnFlightMissing = hasReturnTransfer && !hasReturnFlight
+                  const isReturnDepartureMissing = hasReturnTransfer && 
+                    (!selectedTransfer.return_transfer_details?.estimated_pickup_time || !selectedTransfer.return_flight_details?.departure_time)
+                  return (
                   <div className="border-t border-border pt-4">
                     <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
                       <Plane size={16} className="text-muted-foreground rotate-180" />
@@ -1923,7 +2206,8 @@ const TransfersEnhanced = () => {
                       </div>
                     )}
                   </div>
-                )}
+                  )
+                })()}
 
                 {/* Vendor and Driver Info */}
                 <div className="border-t border-border pt-4">
