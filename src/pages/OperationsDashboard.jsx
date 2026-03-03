@@ -13,6 +13,7 @@ import {
   Building2,
   Activity
 } from 'lucide-react'
+import { PIPELINE_STAGES, getPipelineCount, legMatchesStage } from '../utils/transferFlow'
 import toast from 'react-hot-toast'
 import axios from 'axios'
 import Dropdown from '../components/Dropdown'
@@ -26,44 +27,19 @@ const OperationsDashboard = () => {
   const [selectedStage, setSelectedStage] = useState('all')
   const [viewMode, setViewMode] = useState('pipeline') // 'pipeline' or 'list'
 
-  // Define pipeline stages
-  const pipelineStages = [
-    { 
-      id: 'pending', 
-      label: 'Pending', 
-      color: 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600',
-      icon: Clock,
-      description: 'Waiting for assignment'
-    },
-    { 
-      id: 'assigned', 
-      label: 'Assigned', 
-      color: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-700',
-      icon: Users,
-      description: 'Vendor/Driver assigned'
-    },
-    { 
-      id: 'enroute', 
-      label: 'En Route', 
-      color: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-700',
-      icon: Truck,
-      description: 'Driver on the way'
-    },
-    { 
-      id: 'in_progress', 
-      label: 'In Progress', 
-      color: 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-700',
-      icon: Activity,
-      description: 'Pickup in progress'
-    },
-    { 
-      id: 'completed', 
-      label: 'Completed', 
-      color: 'bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-700',
-      icon: CheckCircle,
-      description: 'Transfer completed'
-    }
-  ]
+  // Pipeline stages: Pending → Assigned → In Progress → Completed (enroute merged into In Progress)
+  const stageColors = {
+    pending: 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600',
+    assigned: 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-700',
+    in_progress: 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-700',
+    completed: 'bg-green-50 dark:bg-green-950/40 border-green-200 dark:border-green-700'
+  }
+  const stageIcons = { pending: Clock, assigned: Users, in_progress: Activity, completed: CheckCircle }
+  const pipelineStages = PIPELINE_STAGES.map(s => ({
+    ...s,
+    color: stageColors[s.id],
+    icon: stageIcons[s.id]
+  }))
 
   // Fetch dashboard data
   useEffect(() => {
@@ -126,7 +102,7 @@ const OperationsDashboard = () => {
       transferDetails?.drop_location?.toLowerCase().includes(searchTerm.toLowerCase())
     
     const matchesStage = selectedStage === 'all' || 
-      (transferDetails?.transfer_status || 'pending') === selectedStage
+      legMatchesStage(transferDetails, selectedStage)
     
     return matchesSearch && matchesStage
   })
@@ -134,7 +110,7 @@ const OperationsDashboard = () => {
   // Group legs by stage for pipeline view
   const legsByStage = pipelineStages.reduce((acc, stage) => {
     acc[stage.id] = filteredLegs.filter(({ transferDetails }) => 
-      (transferDetails?.transfer_status || 'pending') === stage.id
+      legMatchesStage(transferDetails, stage.id)
     )
     return acc
   }, {})
@@ -296,10 +272,10 @@ const OperationsDashboard = () => {
           </div>
 
           {/* Quick Stats */}
-          <div className="grid grid-cols-5 gap-3 mb-6">
+          <div className="grid grid-cols-4 gap-3 mb-6">
             {pipelineStages.map(stage => {
               const Icon = stage.icon
-              const count = stageMetrics[stage.id] || 0
+              const count = getPipelineCount(stageMetrics, stage.id)
               return (
                 <div key={stage.id} className="bg-card rounded-lg border border-border p-3 min-w-0">
                   <div className="flex items-center justify-between gap-2">
@@ -404,7 +380,7 @@ const OperationsDashboard = () => {
                 { value: 'all', label: 'All Stages' },
                 ...pipelineStages.map(stage => ({
                   value: stage.id,
-                  label: `${stage.label} (${stageMetrics[stage.id] || 0})`
+                  label: `${stage.label} (${getPipelineCount(stageMetrics, stage.id)})`
                 }))
               ]}
               placeholder="All Stages"
@@ -415,12 +391,14 @@ const OperationsDashboard = () => {
 
         {/* Pipeline View */}
         {viewMode === 'pipeline' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-            {pipelineStages.map(stage => (
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {pipelineStages.map(stage => {
+              const StageIcon = stage.icon
+              return (
               <div key={stage.id} className={`${stage.color} rounded-lg border p-4`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <stage.icon size={18} />
+                    <StageIcon size={18} />
                     <h3 className="font-semibold">{stage.label}</h3>
                     <span className="bg-background/50 px-2 py-1 rounded text-xs font-medium">
                       {legsByStage[stage.id]?.length || 0}
@@ -447,7 +425,7 @@ const OperationsDashboard = () => {
                   )}
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         ) : (
           /* List View */
@@ -494,11 +472,11 @@ const OperationsDashboard = () => {
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           (transferDetails?.transfer_status || 'pending') === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                          (transferDetails?.transfer_status || 'pending') === 'enroute' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' :
+                          ['enroute', 'in_progress'].includes(transferDetails?.transfer_status || '') ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
                           (transferDetails?.transfer_status || 'pending') === 'assigned' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
                           'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
                         }`}>
-                          {transferDetails?.transfer_status || 'pending'}
+                          {['enroute'].includes(transferDetails?.transfer_status || '') ? 'In Progress' : (transferDetails?.transfer_status || 'pending')}
                         </span>
                       </td>
                       <td className="p-4">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import ChatWidget from './ChatWidget'
 
 const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -74,6 +75,7 @@ const Layout = ({ children }) => {
           </main>
         </div>
       </div>
+      <ChatWidget />
     </div>
   )
 }

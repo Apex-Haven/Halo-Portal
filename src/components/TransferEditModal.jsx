@@ -3,6 +3,7 @@ import { Save, AlertCircle, Users as UsersIcon, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
 import { useApi } from '../hooks/useApi';
+import { normalizeStatus } from '../utils/transferFlow';
 import Drawer from './Drawer';
 import Dropdown from './Dropdown';
 
@@ -188,7 +189,7 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
               ...(rtd ? { ...rtd } : blankReturnTransfer),
               estimated_pickup_time: rtd?.estimated_pickup_time ? toDatetimeLocal(rtd.estimated_pickup_time) : '',
               estimated_drop_time: rtd?.estimated_drop_time ? toDatetimeLocal(rtd.estimated_drop_time) : '',
-              transfer_status: rtd?.transfer_status || 'pending'
+              transfer_status: normalizeStatus(rtd?.transfer_status) || 'pending'
             }
           : blankReturnTransfer),
         traveler_details: td ? { ...td } : null,
@@ -201,7 +202,7 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
           estimated_pickup_time: transfer.transfer_details?.estimated_pickup_time ? toDatetimeLocal(transfer.transfer_details.estimated_pickup_time) : '',
           estimated_drop_time: transfer.transfer_details?.estimated_drop_time ? toDatetimeLocal(transfer.transfer_details.estimated_drop_time) : '',
           special_notes: transfer.transfer_details?.special_notes || '',
-          transfer_status: transfer.transfer_details?.transfer_status || 'pending'
+          transfer_status: normalizeStatus(transfer.transfer_details?.transfer_status) || 'pending'
         },
         internal_notes: transfer.internal_notes || ''
       });
@@ -1130,8 +1131,6 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
                         options={[
                           { value: 'pending', label: 'Pending' },
                           { value: 'assigned', label: 'Assigned' },
-                          { value: 'enroute', label: 'Enroute' },
-                          { value: 'waiting', label: 'Waiting' },
                           { value: 'in_progress', label: 'In Progress' },
                           { value: 'completed', label: 'Completed' },
                           { value: 'cancelled', label: 'Cancelled' }

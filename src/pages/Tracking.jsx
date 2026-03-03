@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { MapPin, Clock, User, Car, Phone, Navigation, CheckCircle, Circle, AlertCircle, Plane, Users, FileText, Truck, ChevronDown, Building2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { MapPin, Clock, User, Car, Navigation, CheckCircle, Circle, AlertCircle, Plane, ChevronDown } from 'lucide-react';
 import LiveMap from '../components/LiveMap';
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
 
 const Tracking = () => {
   const { isDark } = useTheme()
-  // Load search state from localStorage on mount
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Load search state from localStorage on mount, or from URL id param
   const [trackingId, setTrackingId] = useState(() => {
+    const urlId = searchParams.get('id')
+    if (urlId) return urlId
     return localStorage.getItem('tracking_search_id') || '';
   });
   const [transfer, setTransfer] = useState(null);
@@ -21,7 +25,6 @@ const Tracking = () => {
   // Accordion states
   const [accordions, setAccordions] = useState({
     transferDetails: true,
-    completionStatus: true,
     trackingProgress: true,
     liveMap: true
   });
@@ -42,39 +45,40 @@ const Tracking = () => {
     }
   }, [trackingId]);
 
-  // Build tracking steps from transfer state (aligned with completion flow: Traveler → Flight → Vendor → Driver → En route → Pickup → Drop → Completed)
+  // Build tracking steps: Transfer Requested → Driver Assigned → Transfer Started (auto) → Arrival Completed → [Return: Departure Driver → Departure Completed] → Transfer Completed
   const buildTrackingStepsFromTransfer = (t) => {
     if (!t) return [];
-    const hasTraveler = !!(t.traveler_details || t.traveler_id);
-    const hasFlight = !!(t.flight_details?.flight_no && t.flight_details.flight_no !== 'XX000' && t.flight_details.flight_no !== 'TBD');
-    const hasVendor = !!(t.vendor_details?.vendor_id || t.vendor_details?.vendor_name);
+    const onwardStatus = t.transfer_details?.transfer_status || t.transfer_details?.status || 'pending';
+    const returnStatus = t.return_transfer_details?.transfer_status || t.return_transfer_details?.status || 'pending';
     const hasDriver = !!t.assigned_driver_details;
-    const pickedUp = t.assigned_driver_details?.traveler_picked_up;
-    const droppedOff = t.assigned_driver_details?.arrived_at_drop;
-    const status = t.transfer_details?.transfer_status || t.transfer_details?.status || 'pending';
+    const onwardCompleted = onwardStatus === 'completed';
+    const hasReturn = !!(t.return_transfer_details || t.return_flight_details);
+    const returnDriverAssigned = hasReturn && returnStatus && returnStatus !== 'pending';
+    const returnCompleted = hasReturn && returnStatus === 'completed';
+    const allCompleted = onwardCompleted && (!hasReturn || returnCompleted);
 
     const steps = [
-      { id: 1, title: 'Transfer Created', description: 'Your transfer request has been received', status: 'completed', time: null },
-      { id: 2, title: 'Traveler Assigned', description: hasTraveler ? `Traveler: ${t.traveler_details?.name || 'N/A'}` : 'Client needs to assign a traveler', status: hasTraveler ? 'completed' : 'pending', time: null },
-      { id: 3, title: 'Flight Details', description: hasFlight ? `Flight ${t.flight_details?.flight_no || 'N/A'}` : 'Client needs to add flight information', status: hasFlight ? 'completed' : 'pending', time: null },
-      { id: 4, title: 'Vendor Assigned', description: hasVendor ? `Vendor: ${t.vendor_details?.vendor_name || 'N/A'}` : 'Admin needs to assign a vendor', status: hasVendor ? 'completed' : 'pending', time: null },
-      { id: 5, title: 'Driver Assigned', description: hasDriver ? `Driver: ${t.assigned_driver_details?.name || 'N/A'}` : 'Vendor needs to assign a driver', status: hasDriver ? 'completed' : 'pending', time: null },
-      { id: 6, title: 'Driver En Route', description: 'Driver is on the way to pickup location', status: hasDriver && (status === 'enroute' || pickedUp) ? 'in_progress' : hasDriver ? 'pending' : 'pending', time: null },
-      { id: 7, title: 'Traveler Pickup', description: 'Driver has picked up the traveler', status: pickedUp ? 'completed' : hasDriver ? 'pending' : 'pending', time: null },
-      { id: 8, title: 'Transfer Completed', description: 'Traveler has been dropped off at destination', status: droppedOff ? 'completed' : 'pending', time: null }
+      { id: 1, title: 'Transfer Requested', description: 'Your transfer request has been received', status: 'completed', time: null },
+      { id: 2, title: 'Driver Assigned (Arrival)', description: hasDriver ? `Driver: ${t.assigned_driver_details?.name || 'N/A'}` : 'Vendor will assign a driver', status: hasDriver ? 'completed' : 'pending', time: null },
+      { id: 3, title: 'Transfer Started', description: 'Transfer has begun', status: hasDriver ? 'completed' : 'pending', time: null },
+      { id: 4, title: hasReturn ? 'Arrival Transfer Completed' : 'Transfer Completed', description: 'You have reached your destination', status: onwardCompleted ? 'completed' : 'pending', time: null }
     ];
+
+    if (hasReturn) {
+      steps.push(
+        { id: 5, title: 'Departure Driver Assigned', description: returnDriverAssigned ? 'Driver confirmed for return' : 'Driver will be assigned for return', status: returnDriverAssigned ? 'completed' : 'pending', time: null },
+        { id: 6, title: 'Departure Completed', description: 'Return leg completed', status: returnCompleted ? 'completed' : 'pending', time: null },
+        { id: 7, title: 'Transfer Completed', description: 'Your round trip is complete', status: allCompleted ? 'completed' : 'pending', time: null }
+      );
+    }
     return steps;
   };
 
   const defaultSteps = [
-    { id: 1, title: 'Transfer Created', description: 'Your transfer request has been received', status: 'completed', time: null },
-    { id: 2, title: 'Traveler Assigned', description: 'Client needs to assign a traveler', status: 'pending', time: null },
-    { id: 3, title: 'Flight Details', description: 'Client needs to add flight information', status: 'pending', time: null },
-    { id: 4, title: 'Vendor Assigned', description: 'Admin needs to assign a vendor', status: 'pending', time: null },
-    { id: 5, title: 'Driver Assigned', description: 'Vendor needs to assign a driver', status: 'pending', time: null },
-    { id: 6, title: 'Driver En Route', description: 'Driver is on the way to pickup location', status: 'pending', time: null },
-    { id: 7, title: 'Traveler Pickup', description: 'Driver has picked up the traveler', status: 'pending', time: null },
-    { id: 8, title: 'Transfer Completed', description: 'Traveler has been dropped off at destination', status: 'pending', time: null }
+    { id: 1, title: 'Transfer Requested', description: 'Your transfer request has been received', status: 'completed', time: null },
+    { id: 2, title: 'Driver Assigned (Arrival)', description: 'Vendor will assign a driver', status: 'pending', time: null },
+    { id: 3, title: 'Transfer Started', description: 'Transfer has begun', status: 'pending', time: null },
+    { id: 4, title: 'Transfer Completed', description: 'You have reached your destination', status: 'pending', time: null }
   ];
 
   useEffect(() => {
@@ -152,8 +156,9 @@ const Tracking = () => {
     };
   }, [locationUpdateInterval]);
 
-  const handleTrackTransfer = async () => {
-    if (!trackingId.trim()) {
+  const handleTrackTransfer = useCallback(async (overrideId) => {
+    const idToSearch = (overrideId ?? trackingId)?.trim?.() || trackingId?.trim?.()
+    if (!idToSearch) {
       toast.error('Please enter a tracking ID');
       return;
     }
@@ -172,7 +177,7 @@ const Tracking = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(`${API_BASE_URL}/tracking/${trackingId}`, { headers });
+      const response = await fetch(`${API_BASE_URL}/tracking/${idToSearch}`, { headers });
       const data = await response.json();
 
       if (data.success) {
@@ -216,7 +221,17 @@ const Tracking = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [trackingId]);
+
+  // When arriving with ?id= in URL, prefill search and auto-fetch
+  useEffect(() => {
+    const urlId = searchParams.get('id')
+    if (urlId && urlId.trim()) {
+      setTrackingId(urlId)
+      setSearchParams({}, { replace: true })
+      handleTrackTransfer(urlId)
+    }
+  }, [searchParams, handleTrackTransfer])
 
   const getStatusIcon = (status) => {
     const iconClass = status === 'completed' ? 'text-green-600 dark:text-green-400' :
@@ -274,11 +289,11 @@ const Tracking = () => {
   const getStatusDescription = (status) => {
     switch (status) {
       case 'completed': return 'Transfer completed successfully';
-      case 'in_progress': return 'Driver is currently en route';
-      case 'enroute': return 'Driver is on the way to pickup';
+      case 'in_progress':
+      case 'enroute': return 'Arrival transfer in progress';
       case 'waiting': return 'Driver is waiting at pickup';
       case 'pending': return 'Waiting for driver assignment';
-      case 'assigned': return 'Driver has been assigned and is preparing';
+      case 'assigned': return 'Driver assigned, transfer started';
       case 'delayed': return 'Transfer is delayed';
       case 'cancelled': return 'This transfer was cancelled';
       default: return 'Status unknown';
@@ -685,329 +700,6 @@ const Tracking = () => {
             )}
           </div>
 
-          {/* Completion Status Accordion */}
-          <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
-            <button
-              onClick={() => toggleAccordion('completionStatus')}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
-            >
-              <h2 className="text-xl font-semibold text-foreground">
-                Completion Status
-              </h2>
-              <ChevronDown
-                size={20}
-                className={`text-muted-foreground transition-transform duration-200 ${
-                  accordions.completionStatus ? 'transform rotate-180' : ''
-                }`}
-              />
-            </button>
-            {accordions.completionStatus && (
-              <div className="px-6 pb-6 border-t border-border pt-5">
-          <p className="text-sm text-muted-foreground mb-5">
-            Track what information still needs to be provided
-          </p>
-          
-          <div className="space-y-4">
-            {/* 1. Traveler Assignment (first) */}
-            {(() => {
-              const isCompleted = !!transfer.traveler_details || !!transfer.traveler_id;
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  isCompleted 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {isCompleted ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <User size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
-                      <h3 className="font-semibold text-foreground">Traveler Assignment</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        isCompleted 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                      }`}>
-                        {isCompleted ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isCompleted 
-                        ? `Traveler: ${transfer.traveler_details?.name || 'N/A'} - ${transfer.traveler_details?.email || 'N/A'}`
-                        : 'Client needs to assign a traveler'}
-                    </p>
-                    {!isCompleted && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">
-                        Action required by: <span className="font-semibold">Client</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* 2. Flight Details (second) */}
-            {(() => {
-              const isCompleted = transfer.flight_details?.flight_no && 
-                                  transfer.flight_details?.flight_no !== 'XX000' &&
-                                  transfer.flight_details?.flight_no !== 'TBD';
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  isCompleted 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {isCompleted ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Plane size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
-                      <h3 className="font-semibold text-foreground">Flight Details</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        isCompleted 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                      }`}>
-                        {isCompleted ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isCompleted 
-                        ? `Flight ${transfer.flight_details.flight_no} - ${transfer.flight_details.airline || 'N/A'}`
-                        : 'Client needs to provide flight information'}
-                    </p>
-                    {!isCompleted && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">
-                        Action required by: <span className="font-semibold">Client</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* 3. Vendor Assignment (third) */}
-            {(() => {
-              const isCompleted = !!(transfer.vendor_details?.vendor_id || transfer.vendor_details?.vendor_name);
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  isCompleted 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {isCompleted ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Building2 size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
-                      <h3 className="font-semibold text-foreground">Vendor Assignment</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        isCompleted 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                      }`}>
-                        {isCompleted ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isCompleted 
-                        ? `Vendor: ${transfer.vendor_details.vendor_name || 'N/A'}`
-                        : 'Admin needs to assign a vendor'}
-                    </p>
-                    {!isCompleted && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">
-                        Action required by: <span className="font-semibold">Admin</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* 4. Driver Assignment (fourth) */}
-            {(() => {
-              const isCompleted = !!transfer.assigned_driver_details;
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  isCompleted 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {isCompleted ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Car size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
-                      <h3 className="font-semibold text-foreground">Driver Assignment</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        isCompleted 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                      }`}>
-                        {isCompleted ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isCompleted 
-                        ? `Driver: ${transfer.assigned_driver_details.name || transfer.assigned_driver_details.driver_name || 'N/A'} - ${transfer.assigned_driver_details.vehicle_type || 'N/A'}`
-                        : 'Vendor needs to assign a driver'}
-                    </p>
-                    {!isCompleted && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">
-                        Action required by: <span className="font-semibold">Vendor ({transfer.vendor_details?.vendor_name || 'N/A'})</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Traveler Pickup Status */}
-            {transfer.assigned_driver_details && (() => {
-              const isCompleted = transfer.assigned_driver_details.traveler_picked_up;
-              const pickupTime = transfer.assigned_driver_details.pickup_time;
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  isCompleted 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {isCompleted ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Users size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'} />
-                      <h3 className="font-semibold text-foreground">Traveler Pickup</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        isCompleted 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
-                      }`}>
-                        {isCompleted ? 'Completed' : 'Pending'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isCompleted 
-                        ? `Traveler picked up at ${pickupTime ? new Date(pickupTime).toLocaleString() : 'N/A'}`
-                        : 'Driver needs to confirm traveler pickup'}
-                    </p>
-                    {!isCompleted && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">
-                        Action required by: <span className="font-semibold">Driver ({transfer.assigned_driver_details.name || 'N/A'})</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Drop-off Status */}
-            {transfer.assigned_driver_details && (() => {
-              const isCompleted = transfer.assigned_driver_details.arrived_at_drop;
-              const dropTime = transfer.assigned_driver_details.drop_time;
-              return (
-                <div className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
-                  isCompleted 
-                    ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' 
-                    : 'bg-gray-50 dark:bg-gray-950/20 border-gray-200 dark:border-gray-800'
-                }`}>
-                  <div className="flex-shrink-0 mt-0.5">
-                    {isCompleted ? (
-                      <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
-                    ) : (
-                      <Circle size={20} className="text-gray-400 dark:text-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <MapPin size={16} className={isCompleted ? 'text-green-600 dark:text-green-400' : 'text-gray-400'} />
-                      <h3 className="font-semibold text-foreground">Drop-off Confirmation</h3>
-                      <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${
-                        isCompleted 
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                      }`}>
-                        {isCompleted ? 'Completed' : 'In Progress'}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {isCompleted 
-                        ? `Traveler dropped off at ${dropTime ? new Date(dropTime).toLocaleString() : 'N/A'}`
-                        : 'Waiting for driver to complete drop-off'}
-                    </p>
-                    {!isCompleted && transfer.assigned_driver_details.traveler_picked_up && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">
-                        Action required by: <span className="font-semibold">Driver ({transfer.assigned_driver_details.name || 'N/A'})</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Overall Progress Bar (4 steps: Traveler, Flight, Vendor, Driver) */}
-            {(() => {
-              const travelerCompleted = !!transfer.traveler_details || !!transfer.traveler_id;
-              const flightCompleted = transfer.flight_details?.flight_no && transfer.flight_details?.flight_no !== 'XX000' && transfer.flight_details?.flight_no !== 'TBD';
-              const vendorCompleted = !!(transfer.vendor_details?.vendor_id || transfer.vendor_details?.vendor_name);
-              const driverCompleted = !!transfer.assigned_driver_details;
-              
-              const completedCount = [travelerCompleted, flightCompleted, vendorCompleted, driverCompleted].filter(Boolean).length;
-              const totalRequired = 4;
-              const percentage = (completedCount / totalRequired) * 100;
-              
-              return (
-                <div className="mt-6 pt-4 border-t border-border">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-foreground">Overall Progress</span>
-                    <span className="text-sm font-bold text-primary">{completedCount}/{totalRequired} Complete</span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-primary to-green-500 transition-all duration-500 ease-out"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    {percentage === 100 ? (
-                      <span className="text-green-600 dark:text-green-400 font-semibold">All required information provided! ✓</span>
-                    ) : (
-                      `${Math.round(percentage)}% of required information provided`
-                    )}
-                  </p>
-                </div>
-              );
-            })()}
-          </div>
-              </div>
-            )}
-          </div>
-
           {/* Tracking Progress Accordion */}
           <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
             <button
@@ -1026,36 +718,49 @@ const Tracking = () => {
             </button>
             {accordions.trackingProgress && (
               <div className="px-6 pb-6 border-t border-border pt-5">
-          
-          <div className="relative">
-            {/* Progress Line */}
-            <div className="absolute left-[10px] top-5 bottom-5 w-0.5 bg-border" />
-            
-            {trackingSteps.map((step, index) => (
-              <div key={step.id} className="flex items-start mb-6">
-                <div className="mr-4 mt-0.5">
-                  {getStatusIcon(step.status)}
-                </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-center mb-1">
-                    <h3 className="text-base font-medium text-foreground m-0">
-                      {step.title}
-                    </h3>
-                    {step.time && (
-                      <span className="text-sm text-muted-foreground">
-                        {step.time}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground m-0">
-                    {step.description}
-                  </p>
+                <div className="space-y-4">
+                  {trackingSteps.map((step) => {
+                    const isCompleted = step.status === 'completed';
+                    return (
+                      <div
+                        key={step.id}
+                        className={`flex items-start gap-3 p-4 rounded-lg border-2 ${
+                          isCompleted
+                            ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800'
+                            : 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800'
+                        }`}
+                      >
+                        <div className="flex-shrink-0 mt-0.5">
+                          {isCompleted ? (
+                            <CheckCircle size={20} className="text-green-600 dark:text-green-400" />
+                          ) : (
+                            <AlertCircle size={20} className="text-yellow-600 dark:text-yellow-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <h3 className="font-semibold text-foreground">{step.title}</h3>
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                isCompleted
+                                  ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                                  : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
+                              }`}
+                            >
+                              {isCompleted ? 'Completed' : 'Pending'}
+                            </span>
+                            {step.time && (
+                              <span className="text-sm text-muted-foreground ml-auto">{step.time}</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground m-0">{step.description}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
           </div>
 
           {/* Live Map Accordion */}

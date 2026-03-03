@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { getClientAndTravelerNames } from '../utils/transferUtils'
+import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 import Dropdown from '../components/Dropdown'
 import Drawer from '../components/Drawer'
 import axios from 'axios'
@@ -32,6 +33,7 @@ const TransfersEnhanced = () => {
   const [showBulkStatusModal, setShowBulkStatusModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [transferToDelete, setTransferToDelete] = useState(null)
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
   const [showTransferSyncModal, setShowTransferSyncModal] = useState(false)
   const [transferSyncSheetId, setTransferSyncSheetId] = useState('')
   const [transferSyncSheetName, setTransferSyncSheetName] = useState('')
@@ -233,7 +235,7 @@ const TransfersEnhanced = () => {
   // Bulk delete
   const handleBulkDelete = async () => {
     if (selectedTransfers.length === 0) return
-    if (!confirm(`Are you sure you want to delete ${selectedTransfers.length} transfer${selectedTransfers.length > 1 ? 's' : ''}?`)) return
+    setShowBulkDeleteConfirm(false)
     setBulkLoading(true)
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
@@ -475,7 +477,7 @@ const TransfersEnhanced = () => {
       transfer._id?.toLowerCase().includes(searchTerm.toLowerCase())
     
     const status = transfer.transfer_details?.transfer_status || 'pending'
-    const matchesStatus = statusFilter === 'all' || status === statusFilter
+    const matchesStatus = statusFilter === 'all' || normalizeStatus(status) === statusFilter
     
     return matchesSearch && matchesStatus
   })
@@ -493,18 +495,22 @@ const TransfersEnhanced = () => {
   const paginatedTransfers = filteredTransfers.slice(startIndex, endIndex)
   const sortedTransfersPaginated = sortedTransfers.slice(startIndex, endIndex)
 
-  // Status options – colors tuned for both light and dark theme
-  const statusOptions = [
-    { value: 'pending', label: 'Pending', color: 'bg-gray-100 dark:bg-gray-700/80 text-gray-800 dark:text-gray-200' },
-    { value: 'assigned', label: 'Assigned', color: 'bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200' },
-    { value: 'enroute', label: 'En Route', color: 'bg-yellow-100 dark:bg-yellow-900/60 text-yellow-800 dark:text-yellow-200' },
-    { value: 'in_progress', label: 'In Progress', color: 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200' },
-    { value: 'completed', label: 'Completed', color: 'bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-200' },
-    { value: 'cancelled', label: 'Cancelled', color: 'bg-red-100 dark:bg-red-900/60 text-red-800 dark:text-red-200' }
-  ]
+  // Status options – aligned with project flow (enroute merged into in_progress)
+  const statusColors = {
+    pending: 'bg-gray-100 dark:bg-gray-700/80 text-gray-800 dark:text-gray-200',
+    assigned: 'bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200',
+    in_progress: 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200',
+    completed: 'bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-200',
+    cancelled: 'bg-red-100 dark:bg-red-900/60 text-red-800 dark:text-red-200'
+  }
+  const statusOptions = STATUS_OPTIONS.map(opt => ({
+    ...opt,
+    color: statusColors[opt.value] || statusColors.pending
+  }))
 
   const getStatusColor = (status) => {
-    const option = statusOptions.find(opt => opt.value === status)
+    const normalized = normalizeStatus(status)
+    const option = statusOptions.find(opt => opt.value === normalized)
     return option ? option.color : 'bg-gray-100 dark:bg-gray-700/80 text-gray-800 dark:text-gray-200'
   }
 
@@ -743,7 +749,7 @@ const TransfersEnhanced = () => {
             <div className="flex items-center gap-2">
               {canManageTransfers && (
                 <div className="flex items-center gap-1">
-                  {['pending', 'assigned', 'completed'].map(statusValue => (
+                  {['pending', 'assigned', 'in_progress', 'completed'].map(statusValue => (
                     <button
                       key={statusValue}
                       onClick={() => handleQuickStatusChange(transfer._id, statusValue)}
@@ -876,17 +882,16 @@ const TransfersEnhanced = () => {
                   
                   return (
                     <div key={transfer._id} className="relative flex items-start gap-4">
-                      {/* Timeline node – status icon */}
+                      {/* Timeline node – status icon (enroute = In Progress) */}
                       <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                         status === 'completed' ? 'bg-green-500 text-white' :
-                        status === 'in_progress' ? 'bg-blue-500 text-white' :
-                        status === 'enroute' ? 'bg-yellow-500 text-white' :
+                        ['in_progress', 'enroute'].includes(status) ? 'bg-blue-500 text-white' :
                         status === 'assigned' ? 'bg-purple-500 text-white' :
                         'bg-gray-500 text-white'
                       }`}>
                         {status === 'completed' ? (
                           <CheckCircle size={14} strokeWidth={2.5} />
-                        ) : status === 'in_progress' || status === 'enroute' ? (
+                        ) : ['in_progress', 'enroute'].includes(status) ? (
                           <Navigation size={14} strokeWidth={2.5} />
                         ) : status === 'assigned' ? (
                           <User size={14} strokeWidth={2.5} />
@@ -904,8 +909,8 @@ const TransfersEnhanced = () => {
                               <span className="text-sm font-medium text-muted-foreground">
                                 {pickupTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
-                                {status}
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(normalizeStatus(status))}`}>
+                                {['enroute', 'in_progress'].includes(status) ? 'In Progress' : String(status || 'pending').replace(/_/g, ' ')}
                               </span>
                               {transfer.priority === 'high' && (
                                 <AlertTriangle size={14} className="text-red-500" />
@@ -1099,7 +1104,7 @@ const TransfersEnhanced = () => {
                             {/* Quick Actions */}
                             {canManageTransfers && (
                               <div className="flex items-center gap-2 pt-2 border-t border-border">
-                                {['pending', 'assigned', 'completed'].map(statusValue => (
+                                {['pending', 'assigned', 'in_progress', 'completed'].map(statusValue => (
                                   <button
                                     key={statusValue}
                                     onClick={() => handleQuickStatusChange(transfer._id, statusValue)}
@@ -1143,7 +1148,7 @@ const TransfersEnhanced = () => {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Enhanced Transfers</h1>
+              <h1 className="text-3xl font-bold text-foreground">Transfers</h1>
               <p className="text-muted-foreground mt-1">
                 Manage and monitor all transfers with onward and return flight information
               </p>
@@ -1237,7 +1242,7 @@ const TransfersEnhanced = () => {
                   Assign Driver
                 </button>
                 <button
-                  onClick={handleBulkDelete}
+                  onClick={() => setShowBulkDeleteConfirm(true)}
                   disabled={bulkLoading}
                   className="px-3 py-1.5 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50 text-sm flex items-center gap-1"
                 >
@@ -1661,30 +1666,97 @@ const TransfersEnhanced = () => {
           </div>
         )}
 
-        {/* Delete Confirmation Modal */}
-        {showDeleteConfirm && transferToDelete && (
+        {/* Bulk Delete Confirmation Modal */}
+        {showBulkDeleteConfirm && selectedTransfers.length > 0 && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-card rounded-lg border border-border p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold mb-4">Delete Transfer</h3>
-              <p className="text-muted-foreground mb-4">
-                Are you sure you want to delete transfer {transferToDelete._id?.slice(-8)}? This action cannot be undone.
+            <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
+                  <Trash2 size={24} className="text-destructive" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">Delete Transfers</h3>
+                  <p className="text-sm text-muted-foreground">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-sm text-foreground mb-6">
+                Are you sure you want to delete <strong>{selectedTransfers.length}</strong> transfer{selectedTransfers.length !== 1 ? 's' : ''}?
+                This will permanently remove {selectedTransfers.length === 1 ? 'this transfer' : 'these transfers'} from the system.
               </p>
               <div className="flex gap-3">
                 <button
-                  onClick={handleDeleteTransfer}
+                  onClick={() => setShowBulkDeleteConfirm(false)}
                   disabled={bulkLoading}
-                  className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 bg-background border-2 border-border rounded-lg text-foreground font-semibold hover:bg-muted transition-all"
                 >
-                  {bulkLoading ? 'Deleting...' : 'Delete'}
+                  Cancel
                 </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkLoading}
+                  className="flex-1 px-4 py-2.5 bg-destructive text-destructive-foreground rounded-lg font-semibold hover:bg-destructive/90 transition-all flex items-center justify-center gap-2"
+                >
+                  {bulkLoading ? (
+                    <>
+                      <RefreshCw size={18} className="animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={18} />
+                      Delete
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Single Transfer Confirmation Modal */}
+        {showDeleteConfirm && transferToDelete && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center">
+                  <Trash2 size={24} className="text-destructive" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-foreground">Delete Transfer</h3>
+                  <p className="text-sm text-muted-foreground">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-sm text-foreground mb-6">
+                Are you sure you want to delete transfer <strong>{transferToDelete._id?.slice(-8)}</strong>?
+                This will permanently remove this transfer from the system.
+              </p>
+              <div className="flex gap-3">
                 <button
                   onClick={() => {
                     setShowDeleteConfirm(false)
                     setTransferToDelete(null)
                   }}
-                  className="flex-1 px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80"
+                  disabled={bulkLoading}
+                  className="flex-1 px-4 py-2 bg-background border-2 border-border rounded-lg text-foreground font-semibold hover:bg-muted transition-all"
                 >
                   Cancel
+                </button>
+                <button
+                  onClick={handleDeleteTransfer}
+                  disabled={bulkLoading}
+                  className="flex-1 px-4 py-2.5 bg-destructive text-destructive-foreground rounded-lg font-semibold hover:bg-destructive/90 transition-all flex items-center justify-center gap-2"
+                >
+                  {bulkLoading ? (
+                    <>
+                      <RefreshCw size={18} className="animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={18} />
+                      Delete
+                    </>
+                  )}
                 </button>
               </div>
             </div>
