@@ -12,6 +12,7 @@ const Tracking = () => {
   });
   const [transfer, setTransfer] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState(null);
   const [driverLocation, setDriverLocation] = useState(null);
   const [estimatedArrival, setEstimatedArrival] = useState(null);
   const [trackingSteps, setTrackingSteps] = useState([]);
@@ -158,6 +159,7 @@ const Tracking = () => {
     }
 
     setLoading(true);
+    setSearchError(null);
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const token = localStorage.getItem('token');
@@ -204,12 +206,12 @@ const Tracking = () => {
         toast.success('Transfer found!');
       } else {
         const errorMsg = data.message || 'Transfer not found. Please check your ID or name and try again.';
-        toast.error(errorMsg);
+        setSearchError(errorMsg);
         setTransfer(null);
       }
     } catch (error) {
       console.error('Error tracking transfer:', error);
-      toast.error('Unable to connect to tracking service. Please check your internet connection and try again.');
+      setSearchError('Unable to connect. Please check your internet connection and try again.');
       setTransfer(null);
     } finally {
       setLoading(false);
@@ -322,6 +324,7 @@ const Tracking = () => {
               value={trackingId}
               onChange={(e) => {
                 const value = e.target.value;
+                setSearchError(null);
                 // Auto-uppercase only if it looks like an APX ID
                 if (value.match(/^APX\d*$/i)) {
                   setTrackingId(value.toUpperCase());
@@ -360,6 +363,28 @@ const Tracking = () => {
           <p className="text-xs text-muted-foreground">
             Enter your Apex ID (e.g., APX123456) or your name as it appears in your booking
           </p>
+
+          {searchError && (
+            <div className="flex gap-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
+              <AlertCircle size={20} className="flex-shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">We couldn't find your transfer</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">{searchError}</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                  • Use your Apex ID (e.g. APX12345) or full name exactly as on your confirmation
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  • Check for typos or extra spaces
+                </p>
+                <button
+                  onClick={() => setSearchError(null)}
+                  className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -410,9 +435,9 @@ const Tracking = () => {
                       );
                     })()}
 
-                    {/* Trip: From → To */}
+                    {/* Trip: From → To (Onward) */}
                     <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-4">
-                      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground">Trip</h3>
+                      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground">Onward Trip</h3>
                       <div className="flex items-start gap-3">
                         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
                           <MapPin size={16} className="text-primary" />
@@ -436,11 +461,55 @@ const Tracking = () => {
                       </div>
                     </div>
 
+                    {/* Return Trip (when available) */}
+                    {(transfer.return_transfer_details) && (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-4">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground">Return Trip</h3>
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
+                            <MapPin size={16} className="text-primary" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Pickup</div>
+                            <p className="text-base font-medium text-foreground">{transfer.return_transfer_details?.pickup_location || '—'}</p>
+                          </div>
+                        </div>
+                        <div className="ml-4 border-l-2 border-border pl-5 py-1">
+                          <div className="text-xs text-muted-foreground">to</div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center">
+                            <MapPin size={16} className="text-primary" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Drop-off</div>
+                            <p className="text-base font-medium text-foreground">{transfer.return_transfer_details?.drop_location || '—'}</p>
+                          </div>
+                        </div>
+                        {transfer.return_transfer_details?.estimated_pickup_time && (
+                          <div className="pt-2 border-t border-border">
+                            <span className="text-xs text-muted-foreground">Estimated pickup</span>
+                            <p className="text-sm font-medium text-foreground">
+                              {formatDateTime(transfer.return_transfer_details.estimated_pickup_time) || formatTime(transfer.return_transfer_details.estimated_pickup_time) || '—'}
+                            </p>
+                          </div>
+                        )}
+                        {transfer.return_transfer_details?.transfer_status && (
+                          <div className="pt-2 border-t border-border">
+                            <span className="text-xs text-muted-foreground">Return status</span>
+                            <p className={`text-sm font-medium capitalize ${getStatusColor(transfer.return_transfer_details.transfer_status)}`}>
+                              {String(transfer.return_transfer_details.transfer_status).replace(/_/g, ' ')}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Flight (only when real flight) */}
                     {transfer.flight_details?.flight_no && transfer.flight_details.flight_no !== 'XX000' && transfer.flight_details.flight_no !== 'TBD' && (
                       <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-3">
                         <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-                          <Plane size={16} /> Flight
+                          <Plane size={16} /> Onward Flight
                         </h3>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                           <div>
@@ -463,6 +532,65 @@ const Tracking = () => {
                               {formatDateTime(transfer.flight_details.arrival_time) || formatTime(transfer.flight_details.arrival_time) || '—'}
                             </p>
                           </div>
+                          {transfer.flight_details.status && transfer.flight_details.status !== 'on_time' && (
+                            <div>
+                              <span className="text-muted-foreground">Status</span>
+                              <p className="font-medium text-foreground capitalize">{String(transfer.flight_details.status).replace(/_/g, ' ')}</p>
+                            </div>
+                          )}
+                          {transfer.flight_details.api_verified && transfer.flight_details.last_checked && (
+                            <div className="col-span-2">
+                              <span className="text-muted-foreground">Last verified</span>
+                              <p className="font-medium text-foreground text-xs">
+                                {formatDateTime(transfer.flight_details.last_checked) || '—'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Return Flight (when available and real flight) */}
+                    {transfer.return_flight_details?.flight_no && transfer.return_flight_details.flight_no !== 'XX000' && transfer.return_flight_details.flight_no !== 'TBD' && (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-3">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+                          <Plane size={16} /> Return Flight
+                        </h3>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Flight</span>
+                            <p className="font-mono font-medium text-foreground">{transfer.return_flight_details.flight_no}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Airline</span>
+                            <p className="font-medium text-foreground">{transfer.return_flight_details.airline || '—'}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Route</span>
+                            <p className="font-medium text-foreground">
+                              {[transfer.return_flight_details.departure_airport, transfer.return_flight_details.arrival_airport].filter(Boolean).join(' → ') || '—'}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Departure</span>
+                            <p className="font-medium text-foreground">
+                              {formatDateTime(transfer.return_flight_details.departure_time) || formatTime(transfer.return_flight_details.departure_time) || '—'}
+                            </p>
+                          </div>
+                          {transfer.return_flight_details.status && transfer.return_flight_details.status !== 'on_time' && (
+                            <div>
+                              <span className="text-muted-foreground">Status</span>
+                              <p className="font-medium text-foreground capitalize">{String(transfer.return_flight_details.status).replace(/_/g, ' ')}</p>
+                            </div>
+                          )}
+                          {transfer.return_flight_details.api_verified && transfer.return_flight_details.last_checked && (
+                            <div className="col-span-2">
+                              <span className="text-muted-foreground">Last verified</span>
+                              <p className="font-medium text-foreground text-xs">
+                                {formatDateTime(transfer.return_flight_details.last_checked) || '—'}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

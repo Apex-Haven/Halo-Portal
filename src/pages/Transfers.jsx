@@ -515,346 +515,447 @@ const Transfers = () => {
         )}
       </div>
 
-      {/* Transfers Table */}
-      <div className="bg-card rounded-xl shadow-sm border border-border">
+      {/* Transfers as cards */}
+      <div className="space-y-4">
         {loading ? (
-          <div className="p-12 text-center">
+          <div className="bg-card rounded-xl shadow-sm border border-border p-12 text-center">
             <div className="text-base text-muted-foreground">Loading transfers...</div>
           </div>
         ) : filteredTransfers.length > 0 ? (
-          <div className="w-full">
-            {/* Table Header */}
-            <div className="grid grid-cols-[100px_minmax(150px,1.2fr)_minmax(150px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(100px,1fr)_90px_auto] gap-2 px-4 py-4 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              <div>ID</div>
-              <div>Customer / Traveler</div>
-              <div>Flight</div>
-              <div>Vendor / Driver</div>
-              <div>Pickup / Drop</div>
-              <div>Time</div>
-              <div>Status</div>
-              <div className="text-right">Actions</div>
-            </div>
+          filteredTransfers.map((transfer) => {
+            const { clientName, travelerName } = getClientAndTravelerNames(transfer)
+            const status = transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'pending'
+            const hasRealFlight =
+              transfer.flight_details?.flight_no &&
+              transfer.flight_details.flight_no !== 'XX000' &&
+              transfer.flight_details.flight_no !== 'TBD'
 
-            {/* Table Rows */}
-            {filteredTransfers.map((transfer) => {
-              const { clientName, travelerName } = getClientAndTravelerNames(transfer)
-              return (
+            return (
               <div
                 key={transfer._id}
-                className="grid grid-cols-[100px_minmax(150px,1.2fr)_minmax(150px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(100px,1fr)_90px_auto] gap-2 px-4 py-3 border-b border-border items-center text-sm transition-colors hover:bg-muted/30"
+                className="bg-card rounded-xl shadow-sm border border-border overflow-hidden"
               >
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span
-                    className="font-semibold text-foreground text-xs truncate"
-                    title={transfer._id || ''}
-                  >
-                    {transfer._id || 'N/A'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const id = transfer._id || ''
-                      if (id) {
-                        navigator.clipboard.writeText(id)
-                        toast.success('Transfer ID copied')
-                      }
-                    }}
-                    className="flex-shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                    title="Copy transfer ID"
-                  >
-                    <Copy size={14} />
-                  </button>
-                </div>
-                
-                <div className="overflow-hidden">
-                  <div className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis">
-                    {clientName}
+                {/* Card header */}
+                <div className="px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 border-b border-border bg-muted/40">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className="font-semibold text-foreground text-xs sm:text-sm truncate font-mono"
+                        title={transfer._id || ''}
+                      >
+                        {transfer._id || 'N/A'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          const id = transfer._id || ''
+                          if (id) {
+                            navigator.clipboard.writeText(id)
+                            toast.success('Transfer ID copied')
+                          }
+                        }}
+                        className="flex-shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                        title="Copy transfer ID"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    <div className="hidden sm:block h-4 w-px bg-border" />
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                        {clientName || 'Customer'}
+                      </div>
+                      {travelerName && (
+                        <div className="text-xs text-foreground font-medium truncate">
+                          Traveler: {travelerName}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  {travelerName ? (
-                    <div className="text-xs text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis">
-                      Traveler: {travelerName}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-muted-foreground italic">No traveler</div>
-                  )}
-                  {transfer.customer_details?.email && (
-                    <div className="text-[11px] text-muted-foreground/70 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {transfer.customer_details.email}
-                    </div>
-                  )}
-                </div>
-                
-                <div>
-                  {(transfer.flight_details?.flight_no === 'XX000' || transfer.flight_details?.flight_no === 'TBD') ? (
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateClientDetails(transfer)}
-                      className="text-xs font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+                  <div className="flex items-center gap-2 sm:gap-3 sm:justify-end">
+                    {(transfer.return_flight_details || transfer.return_transfer_details) && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-muted text-[10px] font-medium text-foreground border border-border">
+                        Round trip
+                      </span>
+                    )}
+                    <span
+                      className={`${getStatusBg(status)} ${getStatusTextColor(
+                        status
+                      )} px-2 py-1 rounded-full text-[11px] font-semibold capitalize border`}
                     >
-                      Add flight details
-                    </button>
-                  ) : (
-                    <>
-                  <div 
-                    onClick={() => navigate(`/flights?flight=${transfer.flight_details?.flight_no || transfer.flight_details?.flight_number}`)}
-                    className="font-medium text-primary cursor-pointer flex items-center gap-1 hover:underline"
-                  >
-                    <Plane size={14} />
-                    <span className="underline">
-                      {transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A'}
+                      {status}
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {transfer.flight_details?.airline || ''}
+                </div>
+
+                {/* Card body */}
+                <div className="px-4 sm:px-6 py-4 grid gap-4 md:grid-cols-4">
+                  {/* Customer / traveler */}
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Customer / Traveler
+                    </div>
+                    <div className="text-sm font-medium text-foreground truncate">
+                      {clientName || 'N/A'}
+                    </div>
+                    {travelerName ? (
+                      <div className="text-xs text-muted-foreground truncate">
+                        Traveler: {travelerName}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground italic">No traveler</div>
+                    )}
+                    {transfer.customer_details?.email && (
+                      <div className="text-[11px] text-muted-foreground/70 truncate">
+                        {transfer.customer_details.email}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                    <MapPin size={12} />
-                    {transfer.flight_details?.arrival_airport || transfer.flight_details?.arrivalAirport || ''}
-                  </div>
-                    </>
-                  )}
-                </div>
 
-                <div className="overflow-hidden">
-                  {transfer.vendor_details ? (
-                    <div className="space-y-1">
-                      {isClient ? (
-                        // For CLIENT role: show non-clickable text with hover tooltip
-                        <div
-                          className="flex items-center gap-1 overflow-hidden"
-                          title={(() => {
-                            const vendorName = transfer.vendor_details.vendor_name || transfer.vendor_details.vendor_id || 'N/A';
-                            const parts = [`Vendor: ${vendorName}`];
-                            if (transfer.vendor_details.contact_person) {
-                              parts.push(`Contact: ${transfer.vendor_details.contact_person}`);
-                            }
-                            if (transfer.assigned_driver_details) {
-                              const driverName = transfer.assigned_driver_details.name || transfer.assigned_driver_details.driver_name || 'Assigned';
-                              parts.push(`Driver: ${driverName}`);
-                              if (transfer.assigned_driver_details.vehicle_type) {
-                                const vehicle = transfer.assigned_driver_details.vehicle_type + 
-                                  (transfer.assigned_driver_details.vehicle_number ? ` (${transfer.assigned_driver_details.vehicle_number})` : '');
-                                parts.push(`Vehicle: ${vehicle}`);
-                              }
-                            } else {
-                              parts.push('Driver: Not assigned');
-                            }
-                            return parts.join('\n');
-                          })()}
-                        >
-                          <Truck size={14} className="text-muted-foreground" />
-                          <span className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis text-xs">
-                            {transfer.vendor_details.vendor_name || transfer.vendor_details.vendor_id || 'N/A'}
-                          </span>
-                        </div>
-                      ) : (
-                        // For non-CLIENT roles: show clickable link
-                        <div
-                          onClick={() => navigate(`/vendors?search=${transfer.vendor_details.vendor_id}`)}
-                          className="cursor-pointer flex items-center gap-1 overflow-hidden"
-                        >
-                          <Truck size={14} className="text-primary" />
-                          <span className="font-medium text-primary underline whitespace-nowrap overflow-hidden text-ellipsis text-xs">
-                            {transfer.vendor_details.vendor_name || transfer.vendor_details.vendor_id || 'N/A'}
-                          </span>
-                        </div>
-                      )}
-                      {transfer.assigned_driver_details && (
-                        <div className="text-xs text-muted-foreground flex items-center gap-1">
-                          <User size={12} />
-                          <span className="whitespace-nowrap overflow-hidden text-ellipsis">
-                            {transfer.assigned_driver_details.name || transfer.assigned_driver_details.driver_name || 'Driver assigned'}
-                          </span>
-                        </div>
-                      )}
+                  {/* Flight */}
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Flight
                     </div>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">No vendor</span>
-                  )}
-                </div>
-
-                <div className="overflow-hidden">
-                  {transfer.transfer_details?.pickup_location && (
-                    <div className="text-xs">
-                      <div className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-1">
-                        <MapPin size={12} />
-                        <span>Pickup</span>
-                      </div>
-                      <div className="text-muted-foreground mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
-                        {transfer.transfer_details.pickup_location}
-                      </div>
-                    </div>
-                  )}
-                  {transfer.transfer_details?.drop_location && (
-                    <div className="text-xs mt-1">
-                      <div className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-1">
-                        <MapPin size={12} />
-                        <span>Drop</span>
-                      </div>
-                      <div className="text-muted-foreground mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
-                        {transfer.transfer_details.drop_location}
-                      </div>
-                    </div>
-                  )}
-                  {!transfer.transfer_details?.pickup_location && !transfer.transfer_details?.drop_location && (
-                    <span className="text-muted-foreground text-xs">-</span>
-                  )}
-                </div>
-
-                <div className="overflow-hidden">
-                  {(() => {
-                    const hasRealFlight = transfer.flight_details?.flight_no && transfer.flight_details.flight_no !== 'XX000' && transfer.flight_details.flight_no !== 'TBD'
-                    const showPickup = hasRealFlight && transfer.transfer_details?.estimated_pickup_time
-                    const showArrival = hasRealFlight && transfer.flight_details?.arrival_time
-                    if (!showPickup && !showArrival) {
-                      return <span className="text-muted-foreground text-xs">—</span>
-                    }
-                    return (
+                    {(transfer.flight_details?.flight_no === 'XX000' ||
+                      transfer.flight_details?.flight_no === 'TBD') ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateClientDetails(transfer)}
+                        className="text-xs font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
+                      >
+                        Add flight details
+                      </button>
+                    ) : (
                       <>
-                        {showPickup && (
-                          <div className="text-xs">
-                            <div className="font-medium text-foreground flex items-center gap-1">
-                              <Clock size={12} />
-                              <span>Pickup</span>
-                            </div>
-                            <div className="text-muted-foreground mt-0.5">
-                              {new Date(transfer.transfer_details.estimated_pickup_time).toLocaleDateString()}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              {new Date(transfer.transfer_details.estimated_pickup_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          </div>
-                        )}
-                        {showArrival && (
-                          <div className="text-xs mt-1">
-                            <div className="font-medium text-foreground flex items-center gap-1">
-                              <Plane size={12} />
-                              <span>Arrival</span>
-                            </div>
-                            <div className="text-muted-foreground mt-0.5">
-                              {new Date(transfer.flight_details.arrival_time).toLocaleDateString()}
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              {new Date(transfer.flight_details.arrival_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigate(
+                              `/flights?flight=${
+                                transfer.flight_details?.flight_no ||
+                                transfer.flight_details?.flight_number
+                              }`
+                            )
+                          }
+                          className="flex items-center gap-1 text-primary text-sm font-semibold hover:underline"
+                        >
+                          <Plane size={14} />
+                          <span>
+                            {transfer.flight_details?.flight_no ||
+                              transfer.flight_details?.flight_number ||
+                              'N/A'}
+                          </span>
+                        </button>
+                        <div className="text-xs text-muted-foreground">
+                          {transfer.flight_details?.airline || ''}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <MapPin size={12} />
+                          <span>
+                            {transfer.flight_details?.departure_airport ||
+                              transfer.flight_details?.departureAirport ||
+                              '—'}{' '}
+                            →{' '}
+                            {transfer.flight_details?.arrival_airport ||
+                              transfer.flight_details?.arrivalAirport ||
+                              '—'}
+                          </span>
+                        </div>
                       </>
-                    )
-                  })()}
-                </div>
-                
-                <div className="flex items-center">
-                  {(() => {
-                    const status = transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'pending';
-                    return (
-                      <div className="flex flex-col gap-1">
-                      <span className={`${getStatusBg(status)} ${getStatusTextColor(status)} px-2 py-1 rounded text-xs font-medium capitalize border inline-block`}>
-                        {status}
-                      </span>
+                    )}
+                  </div>
+
+                  {/* Vendor / driver */}
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Vendor / Driver
+                    </div>
+                    {transfer.vendor_details ? (
+                      <div className="space-y-1">
+                        {isClient ? (
+                          <div
+                            className="flex items-center gap-1 overflow-hidden"
+                            title={(() => {
+                              const vendorName =
+                                transfer.vendor_details.vendor_name ||
+                                transfer.vendor_details.vendor_id ||
+                                'N/A'
+                              const parts = [`Vendor: ${vendorName}`]
+                              if (transfer.vendor_details.contact_person) {
+                                parts.push(
+                                  `Contact: ${transfer.vendor_details.contact_person}`
+                                )
+                              }
+                              if (transfer.assigned_driver_details) {
+                                const driverName =
+                                  transfer.assigned_driver_details.name ||
+                                  transfer.assigned_driver_details.driver_name ||
+                                  'Assigned'
+                                parts.push(`Driver: ${driverName}`)
+                                if (transfer.assigned_driver_details.vehicle_type) {
+                                  const vehicle =
+                                    transfer.assigned_driver_details.vehicle_type +
+                                    (transfer.assigned_driver_details.vehicle_number
+                                      ? ` (${transfer.assigned_driver_details.vehicle_number})`
+                                      : '')
+                                  parts.push(`Vehicle: ${vehicle}`)
+                                }
+                              } else {
+                                parts.push('Driver: Not assigned')
+                              }
+                              return parts.join('\n')
+                            })()}
+                          >
+                            <Truck size={14} className="text-muted-foreground" />
+                            <span className="font-medium text-foreground whitespace-nowrap overflow-hidden text-ellipsis text-xs">
+                              {transfer.vendor_details.vendor_name ||
+                                transfer.vendor_details.vendor_id ||
+                                'N/A'}
+                            </span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              navigate(
+                                `/vendors?search=${transfer.vendor_details.vendor_id}`
+                              )
+                            }
+                            className="cursor-pointer flex items-center gap-1 overflow-hidden text-primary text-xs font-semibold hover:underline"
+                          >
+                            <Truck size={14} className="text-primary" />
+                            <span className="whitespace-nowrap overflow-hidden text-ellipsis">
+                              {transfer.vendor_details.vendor_name ||
+                                transfer.vendor_details.vendor_id ||
+                                'N/A'}
+                            </span>
+                          </button>
+                        )}
+                        {transfer.assigned_driver_details && (
+                          <div className="text-xs text-muted-foreground flex items-center gap-1">
+                            <User size={12} />
+                            <span className="whitespace-nowrap overflow-hidden text-ellipsis">
+                              {transfer.assigned_driver_details.name ||
+                                transfer.assigned_driver_details.driver_name ||
+                                'Driver assigned'}
+                            </span>
+                          </div>
+                        )}
                         {!transfer.assigned_driver_details && (
                           <div className="flex items-center gap-1">
-                            <div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div>
-                            <span className="text-yellow-600 dark:text-yellow-400 text-[10px] font-medium">No Driver</span>
+                            <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+                            <span className="text-yellow-600 dark:text-yellow-400 text-[11px] font-medium">
+                              No driver
+                            </span>
                           </div>
                         )}
                       </div>
-                    );
-                  })()}
-                </div>
-                
-                <div className="flex gap-1.5 justify-end">
-                  {/* View button - only for admins and vendors */}
-                  {!isClient && (
-                  <button 
-                    onClick={() => handleViewTransfer(transfer)}
-                    className="p-1.5 bg-transparent border border-input rounded cursor-pointer flex items-center justify-center transition-colors hover:bg-accent hover:border-muted-foreground/50"
-                    title="View Details"
-                  >
-                    <Eye size={14} className="text-muted-foreground" />
-                  </button>
-                  )}
+                    ) : (
+                      <span className="text-xs text-muted-foreground">No vendor</span>
+                    )}
+                  </div>
 
-                  {/* Vendor-specific buttons */}
-                  {isVendor && (
-                    <button 
-                      onClick={() => handleAssignDriver(transfer)}
-                      className="p-1.5 bg-transparent border border-primary rounded cursor-pointer flex items-center justify-center transition-colors hover:bg-primary/10 hover:border-primary/80"
-                      title={transfer.assigned_driver_details ? "Update Driver" : "Assign Driver"}
+                  {/* Locations & times */}
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Pickup / Drop
+                      </div>
+                      {transfer.transfer_details?.pickup_location ? (
+                        <div className="text-xs">
+                          <div className="font-medium text-foreground flex items-center gap-1">
+                            <MapPin size={12} />
+                            <span>Pickup</span>
+                          </div>
+                          <div className="text-muted-foreground mt-0.5 truncate">
+                            {transfer.transfer_details.pickup_location}
+                          </div>
+                        </div>
+                      ) : null}
+                      {transfer.transfer_details?.drop_location ? (
+                        <div className="text-xs mt-1">
+                          <div className="font-medium text-foreground flex items-center gap-1">
+                            <MapPin size={12} />
+                            <span>Drop</span>
+                          </div>
+                          <div className="text-muted-foreground mt-0.5 truncate">
+                            {transfer.transfer_details.drop_location}
+                          </div>
+                        </div>
+                      ) : null}
+                      {!transfer.transfer_details?.pickup_location &&
+                        !transfer.transfer_details?.drop_location && (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Time
+                      </div>
+                      {(() => {
+                        const showPickup =
+                          hasRealFlight &&
+                          transfer.transfer_details?.estimated_pickup_time
+                        const showArrival =
+                          hasRealFlight && transfer.flight_details?.arrival_time
+                        if (!showPickup && !showArrival) {
+                          return (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )
+                        }
+                        return (
+                          <>
+                            {showPickup && (
+                              <div className="text-xs">
+                                <div className="font-medium text-foreground flex items-center gap-1">
+                                  <Clock size={12} />
+                                  <span>Pickup</span>
+                                </div>
+                                <div className="text-muted-foreground mt-0.5">
+                                  {new Date(
+                                    transfer.transfer_details.estimated_pickup_time
+                                  ).toLocaleDateString()}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {new Date(
+                                    transfer.transfer_details.estimated_pickup_time
+                                  ).toLocaleTimeString('en-US', {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                            {showArrival && (
+                              <div className="text-xs mt-1">
+                                <div className="font-medium text-foreground flex items-center gap-1">
+                                  <Plane size={12} />
+                                  <span>Arrival</span>
+                                </div>
+                                <div className="text-muted-foreground mt-0.5">
+                                  {new Date(
+                                    transfer.flight_details.arrival_time
+                                  ).toLocaleDateString()}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  {new Date(
+                                    transfer.flight_details.arrival_time
+                                  ).toLocaleTimeString('en-US', {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card footer actions */}
+                <div className="px-4 sm:px-6 py-3 border-t border-border bg-muted/30 flex flex-wrap justify-end gap-1.5">
+                  {!isClient && (
+                    <button
+                      onClick={() => handleViewTransfer(transfer)}
+                      className="px-2 py-1.5 bg-transparent border border-input rounded text-xs flex items-center gap-1.5 hover:bg-accent hover:border-muted-foreground/50"
+                      title="View Details"
                     >
-                      <UserPlus size={14} className="text-primary" />
+                      <Eye size={14} className="text-muted-foreground" />
+                      <span>View</span>
                     </button>
                   )}
 
-                  {/* Client-specific buttons */}
-                  {isClient && (
-                    String(transfer.customer_id) === String(user?.id) || 
-                    String(transfer.customer_id) === String(user?.userId) || 
-                    String(transfer.customer_id) === String(user?._id)
-                  ) && (
-                    <>
-                      <button 
-                        onClick={() => handleAssignTraveler(transfer)}
-                        className="p-1.5 bg-transparent border border-primary rounded cursor-pointer flex items-center justify-center transition-colors hover:bg-primary/10 hover:border-primary/80"
-                        title="Assign Traveler"
-                      >
-                        <User size={14} className="text-primary" />
-                      </button>
-                      <button 
-                        onClick={() => handleUpdateClientDetails(transfer)}
-                        className="p-1.5 bg-transparent border border-primary rounded cursor-pointer flex items-center justify-center transition-colors hover:bg-primary/10 hover:border-primary/80"
-                        title="Update Details"
-                      >
-                        <FileEdit size={14} className="text-primary" />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteClick(transfer)}
-                        className="p-1.5 bg-transparent border border-input rounded cursor-pointer flex items-center justify-center transition-colors hover:bg-danger/10 hover:border-danger/50"
-                        title="Delete Transfer"
-                      >
-                        <Trash2 size={14} className="text-danger" />
-                      </button>
-                    </>
+                  {isVendor && (
+                    <button
+                      onClick={() => handleAssignDriver(transfer)}
+                      className="px-2 py-1.5 bg-transparent border border-primary rounded text-xs flex items-center gap-1.5 hover:bg-primary/10 hover:border-primary/80"
+                      title={
+                        transfer.assigned_driver_details
+                          ? 'Update Driver'
+                          : 'Assign Driver'
+                      }
+                    >
+                      <UserPlus size={14} className="text-primary" />
+                      <span>
+                        {transfer.assigned_driver_details ? 'Driver' : 'Assign'}
+                      </span>
+                    </button>
                   )}
 
-                  {/* Admin: Assign Vendor when transfer has no vendor */}
+                  {isClient &&
+                    (String(transfer.customer_id) === String(user?.id) ||
+                      String(transfer.customer_id) === String(user?.userId) ||
+                      String(transfer.customer_id) === String(user?._id)) && (
+                      <>
+                        <button
+                          onClick={() => handleAssignTraveler(transfer)}
+                          className="px-2 py-1.5 bg-transparent border border-primary rounded text-xs flex items-center gap-1.5 hover:bg-primary/10 hover:border-primary/80"
+                          title="Assign Traveler"
+                        >
+                          <User size={14} className="text-primary" />
+                          <span>Traveler</span>
+                        </button>
+                        <button
+                          onClick={() => handleUpdateClientDetails(transfer)}
+                          className="px-2 py-1.5 bg-transparent border border-primary rounded text-xs flex items-center gap-1.5 hover:bg-primary/10 hover:border-primary/80"
+                          title="Update Details"
+                        >
+                          <FileEdit size={14} className="text-primary" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(transfer)}
+                          className="px-2 py-1.5 bg-transparent border border-input rounded text-xs flex items-center gap-1.5 hover:bg-danger/10 hover:border-danger/50"
+                          title="Delete Transfer"
+                        >
+                          <Trash2 size={14} className="text-danger" />
+                          <span>Delete</span>
+                        </button>
+                      </>
+                    )}
+
                   {canManageTransfers && !transfer.vendor_details?.vendor_id && (
-                    <button 
+                    <button
                       onClick={() => handleAssignVendor(transfer)}
-                      className="p-1.5 bg-transparent border border-amber-500/60 rounded cursor-pointer flex items-center justify-center transition-colors hover:bg-amber-500/10 hover:border-amber-500"
+                      className="px-2 py-1.5 bg-transparent border border-amber-500/60 rounded text-xs flex items-center gap-1.5 hover:bg-amber-500/10 hover:border-amber-500"
                       title="Assign Vendor"
                     >
                       <Truck size={14} className="text-amber-600 dark:text-amber-400" />
+                      <span>Vendor</span>
                     </button>
                   )}
 
-                  {/* Admin-only buttons */}
                   {canManageTransfers && (
                     <>
-                  <button 
-                    onClick={() => handleEditTransfer(transfer)}
-                    className="p-1.5 bg-transparent border border-input rounded cursor-pointer flex items-center justify-center transition-colors hover:bg-accent hover:border-muted-foreground/50"
-                    title="Edit Transfer"
-                  >
-                    <Edit size={14} className="text-muted-foreground" />
-                  </button>
-                  <button 
+                      <button
+                        onClick={() => handleEditTransfer(transfer)}
+                        className="px-2 py-1.5 bg-transparent border border-input rounded text-xs flex items-center gap-1.5 hover:bg-accent hover:border-muted-foreground/50"
+                        title="Edit Transfer"
+                      >
+                        <Edit size={14} className="text-muted-foreground" />
+                        <span>Edit</span>
+                      </button>
+                      <button
                         onClick={() => handleDeleteClick(transfer)}
-                    className="p-1.5 bg-transparent border border-input rounded cursor-pointer flex items-center justify-center transition-colors hover:bg-danger/10 hover:border-danger/50"
-                    title="Delete Transfer"
-                  >
-                    <Trash2 size={14} className="text-danger" />
-                  </button>
+                        className="px-2 py-1.5 bg-transparent border border-input rounded text-xs flex items-center gap-1.5 hover:bg-danger/10 hover:border-danger/50"
+                        title="Delete Transfer"
+                      >
+                        <Trash2 size={14} className="text-danger" />
+                        <span>Delete</span>
+                      </button>
                     </>
                   )}
                 </div>
               </div>
-              )
-            })}
-          </div>
+            )
+          })
         ) : (
-          <div className="p-12 text-center">
+          <div className="bg-card rounded-xl shadow-sm border border-border p-12 text-center">
             <div className="text-base text-muted-foreground mb-2">
               No transfers found
             </div>

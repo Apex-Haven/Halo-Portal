@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, MapPin, Calendar, DollarSign, Star, Building2, Plus, X as XIcon } from 'lucide-react';
+import { MapPin, Calendar, DollarSign, Star, Building2, Plus, X as XIcon } from 'lucide-react';
 import Drawer from './Drawer';
 import Dropdown from './Dropdown';
 import travelAdvisoryService from '../services/travelAdvisoryService';

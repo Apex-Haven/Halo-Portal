@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
 import { useApi } from '../hooks/useApi';
 import Drawer from './Drawer';
+import Dropdown from './Dropdown';
 
 const getTravelerName = (t) => {
   if (!t) return '';
@@ -20,7 +21,8 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
       name: '',
       email: '',
       contact_number: '',
-      passenger_count: 1,
+      no_of_passengers: 1,
+      luggage_count: 0,
       job_position: '',
       company_name: '',
       consent_email: false,
@@ -35,23 +37,32 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
       arrival_airport: '',
       departure_time: '',
       arrival_time: '',
-      status: 'scheduled'
+      status: 'on_time',
+      delay_minutes: 0,
+      gate: '',
+      terminal: ''
     },
+    // Return leg (mandatory by default)
+    includeReturn: true,
+    return_flight_details: null,
+    return_transfer_details: null,
     traveler_details: null,
     traveler_flight_details: null,
     delegates: [],
     transfer_details: {
       pickup_location: '',
       drop_location: '',
-      transfer_type: 'airport',
+      event_place: '',
       estimated_pickup_time: '',
       estimated_drop_time: '',
-      status: 'pending'
+      special_notes: '',
+      transfer_status: 'pending'
     },
-    notes: ''
+    internal_notes: ''
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [addDelegateSelectValue, setAddDelegateSelectValue] = useState('');
 
   // Minimum datetime for inputs (no past): format YYYY-MM-DDTHH:mm for datetime-local
   const getMinDatetimeNow = () => {
@@ -82,6 +93,8 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
       const fd = transfer.flight_details || {};
       const td = transfer.traveler_details || null;
       const tfd = transfer.traveler_flight_details || null;
+      const rfd = transfer.return_flight_details || null;
+      const rtd = transfer.return_transfer_details || null;
       let delegates = [];
       if (transfer.delegates && transfer.delegates.length > 0) {
         delegates = transfer.delegates.map((d) => {
@@ -110,12 +123,35 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
           } : null
         }];
       }
+      const hasReturn = !!(transfer.return_flight_details || transfer.return_transfer_details);
+      const blankReturnFlight = {
+        flight_no: '',
+        airline: '',
+        departure_airport: '',
+        arrival_airport: '',
+        departure_time: '',
+        arrival_time: '',
+        status: 'on_time',
+        delay_minutes: 0,
+        gate: '',
+        terminal: ''
+      };
+      const blankReturnTransfer = {
+        pickup_location: '',
+        drop_location: '',
+        event_place: '',
+        estimated_pickup_time: '',
+        estimated_drop_time: '',
+        special_notes: '',
+        transfer_status: 'pending'
+      };
       setFormData({
         customer_details: {
           name: cd.name || '',
           email: cd.email || '',
           contact_number: cd.contact_number || '',
-          passenger_count: cd.passenger_count ?? cd.no_of_passengers ?? 1,
+          no_of_passengers: cd.no_of_passengers ?? cd.passenger_count ?? 1,
+          luggage_count: cd.luggage_count ?? 0,
           job_position: cd.job_position || '',
           company_name: cd.company_name || '',
           consent_email: !!cd.consent_email,
@@ -130,20 +166,44 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
           arrival_airport: fd.arrival_airport || '',
           departure_time: fd.departure_time ? toDatetimeLocal(fd.departure_time) : '',
           arrival_time: fd.arrival_time ? toDatetimeLocal(fd.arrival_time) : '',
-          status: fd.status || 'scheduled'
+          status: fd.status || 'on_time',
+          delay_minutes: fd.delay_minutes ?? 0,
+          gate: fd.gate || '',
+          terminal: fd.terminal || ''
         },
+        includeReturn: true, // Always show return section (mandatory)
+        return_flight_details: (hasReturn
+          ? {
+              ...(rfd ? { ...rfd } : blankReturnFlight),
+              departure_time: rfd?.departure_time ? toDatetimeLocal(rfd.departure_time) : '',
+              arrival_time: rfd?.arrival_time ? toDatetimeLocal(rfd.arrival_time) : '',
+              status: rfd?.status || 'on_time',
+              delay_minutes: rfd?.delay_minutes ?? 0,
+              gate: rfd?.gate || '',
+              terminal: rfd?.terminal || ''
+            }
+          : blankReturnFlight),
+        return_transfer_details: (hasReturn
+          ? {
+              ...(rtd ? { ...rtd } : blankReturnTransfer),
+              estimated_pickup_time: rtd?.estimated_pickup_time ? toDatetimeLocal(rtd.estimated_pickup_time) : '',
+              estimated_drop_time: rtd?.estimated_drop_time ? toDatetimeLocal(rtd.estimated_drop_time) : '',
+              transfer_status: rtd?.transfer_status || 'pending'
+            }
+          : blankReturnTransfer),
         traveler_details: td ? { ...td } : null,
         traveler_flight_details: tfd ? { ...tfd, departure_time: tfd.departure_time ? toDatetimeLocal(tfd.departure_time) : '', arrival_time: tfd.arrival_time ? toDatetimeLocal(tfd.arrival_time) : '' } : null,
         delegates,
         transfer_details: {
           pickup_location: transfer.transfer_details?.pickup_location || '',
           drop_location: transfer.transfer_details?.drop_location || '',
-          transfer_type: transfer.transfer_details?.transfer_type || 'airport',
+          event_place: transfer.transfer_details?.event_place || '',
           estimated_pickup_time: transfer.transfer_details?.estimated_pickup_time ? toDatetimeLocal(transfer.transfer_details.estimated_pickup_time) : '',
           estimated_drop_time: transfer.transfer_details?.estimated_drop_time ? toDatetimeLocal(transfer.transfer_details.estimated_drop_time) : '',
-          status: transfer.transfer_details?.status || 'pending'
+          special_notes: transfer.transfer_details?.special_notes || '',
+          transfer_status: transfer.transfer_details?.transfer_status || 'pending'
         },
-        notes: transfer.notes || ''
+        internal_notes: transfer.internal_notes || ''
       });
     }
   }, [transfer]);
@@ -160,7 +220,10 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
     const dateTimeFields = ['arrival_time', 'departure_time', 'estimated_pickup_time', 'estimated_drop_time'];
     if (dateTimeFields.includes(field) && value && new Date(value) < new Date()) {
       setErrors(prev => ({ ...prev, [`${section}.${field}`]: 'Cannot select a past date or time' }));
-      setFormData(prev => ({ ...prev, [section]: { ...prev[section], [field]: '' } }));
+      setFormData(prev => {
+        const currentSection = (prev[section] && typeof prev[section] === 'object') ? prev[section] : {};
+        return { ...prev, [section]: { ...currentSection, [field]: '' } };
+      });
       return;
     }
     setFormData(prev => {
@@ -177,7 +240,10 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
             arrival_airport: fd?.arrival_airport || '',
             departure_time: fd?.departure_time || '',
             arrival_time: fd?.arrival_time || '',
-            status: fd?.status || 'scheduled'
+            status: fd?.status || 'on_time',
+            delay_minutes: fd?.delay_minutes ?? 0,
+            gate: fd?.gate || '',
+            terminal: fd?.terminal || ''
           };
         }
       } else {
@@ -194,50 +260,61 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
     const newErrors = {};
 
     // Customer validation
-    if (!formData.customer_details.name.trim()) {
-      newErrors['customer_details.name'] = 'Customer name is required';
-    }
-    if (!formData.customer_details.email.trim()) {
-      newErrors['customer_details.email'] = 'Customer email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.customer_details.email)) {
-      newErrors['customer_details.email'] = 'Invalid email format';
-    }
-    if (!formData.customer_details.contact_number.trim()) {
-      newErrors['customer_details.contact_number'] = 'Contact number is required';
-    }
-    if (formData.customer_details.passenger_count < 1) {
-      newErrors['customer_details.passenger_count'] = 'At least 1 passenger required';
-    }
+    if (!formData.customer_details.name.trim()) newErrors['customer_details.name'] = 'Customer name is required';
+    if (!formData.customer_details.email.trim()) newErrors['customer_details.email'] = 'Customer email is required';
+    else if (!/\S+@\S+\.\S+/.test(formData.customer_details.email)) newErrors['customer_details.email'] = 'Invalid email format';
+    if (!formData.customer_details.contact_number.trim()) newErrors['customer_details.contact_number'] = 'Contact number is required';
+    if ((Number(formData.customer_details.no_of_passengers) || 0) < 1) newErrors['customer_details.no_of_passengers'] = 'At least 1 passenger required';
+    if ((Number(formData.customer_details.luggage_count) || 0) < 0) newErrors['customer_details.luggage_count'] = 'Luggage count cannot be negative';
 
     // Flight validation
-    if (!formData.flight_details.flight_no.trim()) {
-      newErrors['flight_details.flight_no'] = 'Flight number is required';
+    if (!formData.flight_details.flight_no.trim()) newErrors['flight_details.flight_no'] = 'Flight number is required';
+    if (!formData.flight_details.airline.trim()) newErrors['flight_details.airline'] = 'Airline is required';
+    if (!formData.flight_details.departure_airport.trim()) newErrors['flight_details.departure_airport'] = 'Departure airport is required';
+    if (!formData.flight_details.arrival_airport.trim()) newErrors['flight_details.arrival_airport'] = 'Arrival airport is required';
+    if (!formData.flight_details.departure_time) newErrors['flight_details.departure_time'] = 'Departure time is required';
+    if (!formData.flight_details.arrival_time) newErrors['flight_details.arrival_time'] = 'Arrival time is required';
+    if (formData.flight_details.departure_time && formData.flight_details.arrival_time) {
+      const dep = new Date(formData.flight_details.departure_time);
+      const arr = new Date(formData.flight_details.arrival_time);
+      if (arr <= dep) newErrors['flight_details.arrival_time'] = 'Arrival time must be after departure time';
     }
-    if (!formData.flight_details.airline.trim()) {
-      newErrors['flight_details.airline'] = 'Airline is required';
-    }
-    if (!formData.flight_details.arrival_airport.trim()) {
-      newErrors['flight_details.arrival_airport'] = 'Arrival airport is required';
-    }
-    if (!formData.flight_details.arrival_time) {
-      newErrors['flight_details.arrival_time'] = 'Arrival time is required';
-    } else if (new Date(formData.flight_details.arrival_time) < new Date()) {
-      newErrors['flight_details.arrival_time'] = 'Cannot select a past date or time';
+
+    // Return validation (optional)
+    if (formData.includeReturn) {
+      const rfd = formData.return_flight_details;
+      const rtd = formData.return_transfer_details;
+
+      if (!rfd) newErrors['return_flight_details'] = 'Return flight details are required';
+      if (!rtd) newErrors['return_transfer_details'] = 'Return transfer details are required';
+
+      if (rfd) {
+        if (!String(rfd.flight_no || '').trim()) newErrors['return_flight_details.flight_no'] = 'Return flight number is required';
+        if (!String(rfd.airline || '').trim()) newErrors['return_flight_details.airline'] = 'Return airline is required';
+        if (!String(rfd.departure_airport || '').trim()) newErrors['return_flight_details.departure_airport'] = 'Return departure airport is required';
+        if (!String(rfd.arrival_airport || '').trim()) newErrors['return_flight_details.arrival_airport'] = 'Return arrival airport is required';
+        if (!rfd.departure_time) newErrors['return_flight_details.departure_time'] = 'Return departure time is required';
+        if (!rfd.arrival_time) newErrors['return_flight_details.arrival_time'] = 'Return arrival time is required';
+        if (rfd.departure_time && rfd.arrival_time) {
+          const dep = new Date(rfd.departure_time);
+          const arr = new Date(rfd.arrival_time);
+          if (arr <= dep) newErrors['return_flight_details.arrival_time'] = 'Return arrival must be after return departure';
+        }
+      }
+
+      if (rtd) {
+        if (!String(rtd.pickup_location || '').trim()) newErrors['return_transfer_details.pickup_location'] = 'Return pickup location is required';
+        if (!String(rtd.drop_location || '').trim()) newErrors['return_transfer_details.drop_location'] = 'Return drop location is required';
+        if (!String(rtd.event_place || '').trim()) newErrors['return_transfer_details.event_place'] = 'Return event place is required';
+        if (!rtd.estimated_pickup_time) newErrors['return_transfer_details.estimated_pickup_time'] = 'Return estimated pickup time is required';
+      }
     }
 
     // Transfer validation
-    if (!formData.transfer_details.pickup_location.trim()) {
-      newErrors['transfer_details.pickup_location'] = 'Pickup location is required';
-    }
-    if (!formData.transfer_details.drop_location.trim()) {
-      newErrors['transfer_details.drop_location'] = 'Drop location is required';
-    }
-    if (!formData.transfer_details.estimated_pickup_time) {
-      newErrors['transfer_details.estimated_pickup_time'] = 'Estimated pickup time is required';
-    }
-    if (!formData.transfer_details.estimated_drop_time) {
-      newErrors['transfer_details.estimated_drop_time'] = 'Estimated drop time is required';
-    }
+    if (!formData.transfer_details.pickup_location.trim()) newErrors['transfer_details.pickup_location'] = 'Pickup location is required';
+    if (!formData.transfer_details.drop_location.trim()) newErrors['transfer_details.drop_location'] = 'Drop location is required';
+    if (!formData.transfer_details.event_place.trim()) newErrors['transfer_details.event_place'] = 'Event place is required';
+    if (!formData.transfer_details.estimated_pickup_time) newErrors['transfer_details.estimated_pickup_time'] = 'Estimated pickup time is required';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -269,10 +346,28 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
         arrival_time: fd.arrival_time ? new Date(fd.arrival_time).toISOString() : undefined
       };
       const transfer_details = {
-        ...formData.transfer_details,
+        pickup_location: formData.transfer_details.pickup_location,
+        drop_location: formData.transfer_details.drop_location,
+        event_place: formData.transfer_details.event_place,
         estimated_pickup_time: formData.transfer_details.estimated_pickup_time ? new Date(formData.transfer_details.estimated_pickup_time).toISOString() : undefined,
-        estimated_drop_time: formData.transfer_details.estimated_drop_time ? new Date(formData.transfer_details.estimated_drop_time).toISOString() : undefined
+        special_notes: formData.transfer_details.special_notes || ''
       };
+      const return_flight_details = formData.includeReturn && formData.return_flight_details
+        ? {
+            ...formData.return_flight_details,
+            departure_time: formData.return_flight_details.departure_time ? new Date(formData.return_flight_details.departure_time).toISOString() : undefined,
+            arrival_time: formData.return_flight_details.arrival_time ? new Date(formData.return_flight_details.arrival_time).toISOString() : undefined
+          }
+        : null;
+      const return_transfer_details = formData.includeReturn && formData.return_transfer_details
+        ? {
+            pickup_location: formData.return_transfer_details.pickup_location,
+            drop_location: formData.return_transfer_details.drop_location,
+            event_place: formData.return_transfer_details.event_place,
+            estimated_pickup_time: formData.return_transfer_details.estimated_pickup_time ? new Date(formData.return_transfer_details.estimated_pickup_time).toISOString() : undefined,
+            special_notes: formData.return_transfer_details.special_notes || ''
+          }
+        : null;
       const delegates = (formData.delegates || []).map((d) => {
         const tid = typeof d.traveler_id === 'object' && d.traveler_id?._id ? d.traveler_id._id : d.traveler_id;
         const entry = {
@@ -290,10 +385,19 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
         return entry;
       });
       const updateData = {
-        ...formData,
+        customer_details: {
+          ...formData.customer_details,
+          no_of_passengers: Number(formData.customer_details.no_of_passengers) || 1,
+          luggage_count: Number(formData.customer_details.luggage_count) || 0
+        },
         flight_details,
         transfer_details,
-        delegates
+        return_flight_details,
+        return_transfer_details,
+        traveler_details: formData.traveler_details,
+        traveler_flight_details: formData.traveler_flight_details,
+        delegates,
+        internal_notes: formData.internal_notes || ''
       };
 
       const response = await fetch(`${API_BASE_URL}/transfers/${transfer._id}`, {
@@ -418,20 +522,38 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  Passenger Count *
+                  No. of Passengers *
                 </label>
                 <input
                   type="number"
                   min="1"
-                  value={formData.customer_details.passenger_count}
-                  onChange={(e) => handleInputChange('customer_details', 'passenger_count', parseInt(e.target.value))}
+                  value={formData.customer_details.no_of_passengers}
+                  onChange={(e) => handleInputChange('customer_details', 'no_of_passengers', parseInt(e.target.value))}
                   className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                    errors['customer_details.passenger_count'] 
+                    errors['customer_details.no_of_passengers'] 
                       ? 'border-red-500 dark:border-red-500' 
                       : 'border-gray-300 dark:border-gray-600'
                   }`}
                 />
-                <ErrorMessage error={errors['customer_details.passenger_count']} />
+                <ErrorMessage error={errors['customer_details.no_of_passengers']} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                  Luggage Count *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.customer_details.luggage_count}
+                  onChange={(e) => handleInputChange('customer_details', 'luggage_count', parseInt(e.target.value))}
+                  className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                    errors['customer_details.luggage_count'] 
+                      ? 'border-red-500 dark:border-red-500' 
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`}
+                />
+                <ErrorMessage error={errors['customer_details.luggage_count']} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Job Position</label>
@@ -502,15 +624,20 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  Departure Airport
+                  Departure Airport *
                 </label>
                 <input
                   type="text"
                   value={formData.flight_details.departure_airport}
                   onChange={(e) => handleInputChange('flight_details', 'departure_airport', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                    errors['flight_details.departure_airport']
+                      ? 'border-red-500 dark:border-red-500'
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`}
                   placeholder="e.g., DEL"
                 />
+                <ErrorMessage error={errors['flight_details.departure_airport']} />
               </div>
               
               <div>
@@ -533,15 +660,20 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  Departure Time
+                  Departure Time *
                 </label>
                 <input
                   type="datetime-local"
                   min={minDatetimeNow}
                   value={formData.flight_details.departure_time || ''}
                   onChange={(e) => handleInputChange('flight_details', 'departure_time', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                    errors['flight_details.departure_time']
+                      ? 'border-red-500 dark:border-red-500'
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`}
                 />
+                <ErrorMessage error={errors['flight_details.departure_time']} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
@@ -565,16 +697,20 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                   Flight Status
                 </label>
-                <select
+                <Dropdown
+                  name="flight_details.status"
                   value={formData.flight_details.status}
                   onChange={(e) => handleInputChange('flight_details', 'status', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="scheduled">Scheduled</option>
-                  <option value="delayed">Delayed</option>
-                  <option value="on_time">On Time</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
+                  options={[
+                    { value: 'on_time', label: 'On Time' },
+                    { value: 'delayed', label: 'Delayed' },
+                    { value: 'boarding', label: 'Boarding' },
+                    { value: 'departed', label: 'Departed' },
+                    { value: 'landed', label: 'Landed' },
+                    { value: 'cancelled', label: 'Cancelled' }
+                  ]}
+                  minWidth="100%"
+                />
               </div>
             </div>
           </div>
@@ -587,14 +723,15 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Delegates are managed on the Travelers page. Add or remove delegates for this transfer below.</p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Add delegate</label>
-              <select
-                value=""
+              <Dropdown
+                name="addDelegate"
+                value={addDelegateSelectValue}
                 onChange={(e) => {
                   const id = e.target.value;
                   if (!id) return;
                   const t = travelers.find((x) => (x._id || x.id) === id);
                   const name = t ? getTravelerName(t) : '';
-                  const used = (formData.delegates || []).map((d) => d.traveler_id).filter(Boolean);
+                  const used = (formData.delegates || []).map((d) => (typeof d.traveler_id === 'object' ? d.traveler_id?._id : d.traveler_id) || '').filter(Boolean);
                   if (used.includes(id)) return;
                   setFormData((prev) => ({
                     ...prev,
@@ -605,17 +742,18 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
                       flight_details: null
                     }]
                   }));
-                  e.target.value = '';
+                  setAddDelegateSelectValue('');
                 }}
-                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="">Select a traveler...</option>
-                {(travelers || []).filter((t) => !(formData.delegates || []).some((d) => ((typeof d.traveler_id === 'object' ? d.traveler_id?._id : d.traveler_id) || '') === (t._id || t.id))).map((t) => (
-                  <option key={t._id || t.id} value={t._id || t.id}>
-                    {getTravelerName(t) || t.email} ({t.email})
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: 'Select a traveler...' },
+                  ...(travelers || []).filter((t) => !(formData.delegates || []).some((d) => ((typeof d.traveler_id === 'object' ? d.traveler_id?._id : d.traveler_id) || '') === (t._id || t.id))).map((t) => ({
+                    value: t._id || t.id,
+                    label: `${getTravelerName(t) || t.email} (${t.email})`
+                  }))
+                ]}
+                placeholder="Select a traveler..."
+                minWidth="100%"
+              />
             </div>
             {(formData.delegates || []).map((d, idx) => (
               <div key={d.traveler_id || idx} className="p-4 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 space-y-4 mb-4">
@@ -627,7 +765,8 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Flight same as primary?</label>
-                  <select
+                  <Dropdown
+                    name={`flight_same_as_primary_${idx}`}
                     value={d.flight_same_as_primary ? 'yes' : 'no'}
                     onChange={(e) => {
                       const isSame = e.target.value === 'yes';
@@ -654,11 +793,9 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
                         };
                       });
                     }}
-                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
+                    options={[{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]}
+                    minWidth="100%"
+                  />
                 </div>
                 {d.flight_same_as_primary === false && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -736,35 +873,33 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  Transfer Type
+                  Event Place *
                 </label>
-                <select
-                  value={formData.transfer_details.transfer_type}
-                  onChange={(e) => handleInputChange('transfer_details', 'transfer_type', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="airport">Airport Transfer</option>
-                  <option value="hotel">Hotel Transfer</option>
-                  <option value="city">City Transfer</option>
-                  <option value="intercity">Intercity Transfer</option>
-                </select>
+                <input
+                  type="text"
+                  value={formData.transfer_details.event_place}
+                  onChange={(e) => handleInputChange('transfer_details', 'event_place', e.target.value)}
+                  className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                    errors['transfer_details.event_place'] 
+                      ? 'border-red-500 dark:border-red-500' 
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`}
+                  placeholder="e.g., Grand Hyatt Convention Center"
+                />
+                <ErrorMessage error={errors['transfer_details.event_place']} />
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  Transfer Status
+                  Special Notes
                 </label>
-                <select
-                  value={formData.transfer_details.status}
-                  onChange={(e) => handleInputChange('transfer_details', 'status', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="assigned">Assigned</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
+                <textarea
+                  rows={3}
+                  value={formData.transfer_details.special_notes || ''}
+                  onChange={(e) => handleInputChange('transfer_details', 'special_notes', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y"
+                  placeholder="Optional notes for operations / vendor"
+                />
               </div>
               
               <div>
@@ -787,22 +922,250 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                  Estimated Drop Time *
+                  Estimated Drop Time (optional)
                 </label>
                 <input
                   type="datetime-local"
                   min={minDatetimeNow}
                   value={formData.transfer_details.estimated_drop_time}
                   onChange={(e) => handleInputChange('transfer_details', 'estimated_drop_time', e.target.value)}
-                  className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
-                    errors['transfer_details.estimated_drop_time'] 
-                      ? 'border-red-500 dark:border-red-500' 
-                      : 'border-gray-300 dark:border-gray-600'
-                  }`}
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
-                <ErrorMessage error={errors['transfer_details.estimated_drop_time']} />
               </div>
             </div>
+          </div>
+
+          {/* Return transfer (optional) */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Return transfer (optional)
+              </h3>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!formData.includeReturn}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setFormData((prev) => {
+                      const next = { ...prev, includeReturn: checked };
+                      if (checked) {
+                        if (!prev.return_flight_details) {
+                          next.return_flight_details = {
+                            flight_no: '',
+                            airline: '',
+                            departure_airport: '',
+                            arrival_airport: '',
+                            departure_time: '',
+                            arrival_time: '',
+                            status: 'on_time',
+                            delay_minutes: 0,
+                            gate: '',
+                            terminal: ''
+                          };
+                        }
+                        if (!prev.return_transfer_details) {
+                          next.return_transfer_details = {
+                            pickup_location: '',
+                            drop_location: '',
+                            event_place: '',
+                            estimated_pickup_time: '',
+                            estimated_drop_time: '',
+                            special_notes: '',
+                            transfer_status: 'pending'
+                          };
+                        }
+                      } else {
+                        next.return_flight_details = null;
+                        next.return_transfer_details = null;
+                      }
+                      return next;
+                    });
+                  }}
+                  className="rounded border-gray-300"
+                />
+                Include return
+              </label>
+            </div>
+
+            {formData.includeReturn && (
+              <div className="space-y-6">
+                {/* Return Flight Details */}
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                    Return flight details
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Flight Number *</label>
+                      <input
+                        type="text"
+                        value={formData.return_flight_details?.flight_no || ''}
+                        onChange={(e) => handleInputChange('return_flight_details', 'flight_no', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_flight_details.flight_no'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                        placeholder="e.g., EK501"
+                      />
+                      <ErrorMessage error={errors['return_flight_details.flight_no']} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Airline *</label>
+                      <input
+                        type="text"
+                        value={formData.return_flight_details?.airline || ''}
+                        onChange={(e) => handleInputChange('return_flight_details', 'airline', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_flight_details.airline'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                        placeholder="e.g., Emirates"
+                      />
+                      <ErrorMessage error={errors['return_flight_details.airline']} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Departure Airport *</label>
+                      <input
+                        type="text"
+                        value={formData.return_flight_details?.departure_airport || ''}
+                        onChange={(e) => handleInputChange('return_flight_details', 'departure_airport', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_flight_details.departure_airport'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                        placeholder="e.g., BOM"
+                        maxLength={3}
+                      />
+                      <ErrorMessage error={errors['return_flight_details.departure_airport']} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Arrival Airport *</label>
+                      <input
+                        type="text"
+                        value={formData.return_flight_details?.arrival_airport || ''}
+                        onChange={(e) => handleInputChange('return_flight_details', 'arrival_airport', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_flight_details.arrival_airport'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                        placeholder="e.g., DEL"
+                        maxLength={3}
+                      />
+                      <ErrorMessage error={errors['return_flight_details.arrival_airport']} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Departure Time *</label>
+                      <input
+                        type="datetime-local"
+                        min={minDatetimeNow}
+                        value={formData.return_flight_details?.departure_time || ''}
+                        onChange={(e) => handleInputChange('return_flight_details', 'departure_time', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_flight_details.departure_time'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      <ErrorMessage error={errors['return_flight_details.departure_time']} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Arrival Time *</label>
+                      <input
+                        type="datetime-local"
+                        min={minDatetimeNow}
+                        value={formData.return_flight_details?.arrival_time || ''}
+                        onChange={(e) => handleInputChange('return_flight_details', 'arrival_time', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_flight_details.arrival_time'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      <ErrorMessage error={errors['return_flight_details.arrival_time']} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Return Transfer Details */}
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                    Return transfer details
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Pickup Location *</label>
+                      <input
+                        type="text"
+                        value={formData.return_transfer_details?.pickup_location || ''}
+                        onChange={(e) => handleInputChange('return_transfer_details', 'pickup_location', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_transfer_details.pickup_location'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      <ErrorMessage error={errors['return_transfer_details.pickup_location']} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Drop Location *</label>
+                      <input
+                        type="text"
+                        value={formData.return_transfer_details?.drop_location || ''}
+                        onChange={(e) => handleInputChange('return_transfer_details', 'drop_location', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_transfer_details.drop_location'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      <ErrorMessage error={errors['return_transfer_details.drop_location']} />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Event Place *</label>
+                      <input
+                        type="text"
+                        value={formData.return_transfer_details?.event_place || ''}
+                        onChange={(e) => handleInputChange('return_transfer_details', 'event_place', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_transfer_details.event_place'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      <ErrorMessage error={errors['return_transfer_details.event_place']} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Transfer status</label>
+                      <Dropdown
+                        name="return_transfer_details.transfer_status"
+                        value={formData.return_transfer_details?.transfer_status || 'pending'}
+                        onChange={(e) => handleInputChange('return_transfer_details', 'transfer_status', e.target.value)}
+                        options={[
+                          { value: 'pending', label: 'Pending' },
+                          { value: 'assigned', label: 'Assigned' },
+                          { value: 'enroute', label: 'Enroute' },
+                          { value: 'waiting', label: 'Waiting' },
+                          { value: 'in_progress', label: 'In Progress' },
+                          { value: 'completed', label: 'Completed' },
+                          { value: 'cancelled', label: 'Cancelled' }
+                        ]}
+                        minWidth="100%"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Estimated Pickup Time *</label>
+                      <input
+                        type="datetime-local"
+                        min={minDatetimeNow}
+                        value={formData.return_transfer_details?.estimated_pickup_time || ''}
+                        onChange={(e) => handleInputChange('return_transfer_details', 'estimated_pickup_time', e.target.value)}
+                        className={`w-full px-3 py-2.5 border rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          errors['return_transfer_details.estimated_pickup_time'] ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      <ErrorMessage error={errors['return_transfer_details.estimated_pickup_time']} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Estimated Drop Time</label>
+                      <input
+                        type="datetime-local"
+                        min={minDatetimeNow}
+                        value={formData.return_transfer_details?.estimated_drop_time || ''}
+                        onChange={(e) => handleInputChange('return_transfer_details', 'estimated_drop_time', e.target.value)}
+                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Notes */}
@@ -811,8 +1174,8 @@ const TransferEditModal = ({ transfer, onClose, onSuccess }) => {
               Additional Notes
             </h3>
             <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+              value={formData.internal_notes}
+              onChange={(e) => setFormData(prev => ({ ...prev, internal_notes: e.target.value }))}
               rows={4}
               className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm outline-none transition-colors bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-y"
               placeholder="Enter any additional notes or special instructions..."

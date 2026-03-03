@@ -1,19 +1,76 @@
-import { useState } from 'react'
-import { Settings as SettingsIcon, Bell, Shield, Database, ToggleLeft } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Settings as SettingsIcon, Bell, Shield, Database, ToggleLeft, Plane } from 'lucide-react'
 import { useFeatures, FEATURE_KEYS, FEATURE_LABELS } from '../contexts/FeaturesContext'
+import { useAuth } from '../contexts/AuthContext'
+import { useApi } from '../hooks/useApi'
 import Dropdown from '../components/Dropdown'
+import toast from 'react-hot-toast'
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('general')
   const { isFeatureEnabled, setFeatureEnabled } = useFeatures()
+  const { user } = useAuth()
+  const { get, put, post } = useApi()
 
-  const tabs = [
+  const baseTabs = [
     { id: 'general', label: 'General', icon: SettingsIcon },
     { id: 'features', label: 'Features', icon: ToggleLeft },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'integrations', label: 'Integrations', icon: Database }
   ]
+  const flightApiTab = { id: 'flight-api', label: 'Flight API', icon: Plane }
+  const tabs = user?.role === 'SUPER_ADMIN' ? [...baseTabs, flightApiTab] : baseTabs
+
+  // Flight API state (SUPER_ADMIN only)
+  const [flightApiKey, setFlightApiKey] = useState('')
+  const [flightApiPlan, setFlightApiPlan] = useState('free')
+  const [flightApiConfigured, setFlightApiConfigured] = useState(false)
+  const [flightApiSaving, setFlightApiSaving] = useState(false)
+  const [flightApiTesting, setFlightApiTesting] = useState(false)
+
+  useEffect(() => {
+    if (user?.role === 'SUPER_ADMIN' && activeTab === 'flight-api') {
+      get('/settings').then((res) => {
+        if (res?.data) {
+          setFlightApiConfigured(res.data.api_key_configured)
+          setFlightApiPlan(res.data.api_plan || 'free')
+        }
+      }).catch(() => {})
+    }
+  }, [user?.role, activeTab])
+
+  const handleSaveFlightApi = async () => {
+    setFlightApiSaving(true)
+    try {
+      const payload = { api_plan: flightApiPlan }
+      if (flightApiKey.trim()) payload.aviationstack_api_key = flightApiKey.trim()
+      await put('/settings', payload)
+      setFlightApiConfigured(payload.aviationstack_api_key ? true : flightApiConfigured)
+      setFlightApiKey('')
+      toast.success('Settings saved')
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to save')
+    } finally {
+      setFlightApiSaving(false)
+    }
+  }
+
+  const handleTestFlightApi = async () => {
+    setFlightApiTesting(true)
+    try {
+      const res = await post('/settings/test-flight-api', {})
+      if (res?.success) {
+        toast.success(res.message || 'Connection successful')
+      } else {
+        toast.error(res?.message || 'Connection failed')
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Test failed')
+    } finally {
+      setFlightApiTesting(false)
+    }
+  }
 
   return (
     <div className="max-w-[1200px] mx-auto">
@@ -314,6 +371,62 @@ const Settings = () => {
                   </div>
                   <button className="px-4 py-2 bg-primary text-primary-foreground border-none rounded-md text-xs font-medium cursor-pointer hover:bg-primary/90 transition-colors">
                     Configure
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'flight-api' && user?.role === 'SUPER_ADMIN' && (
+            <div className="bg-card rounded-xl shadow-sm border border-border p-6">
+              <h2 className="text-xl font-semibold text-foreground mb-2">
+                Flight API (Aviationstack)
+              </h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Store your Aviationstack API key here. Used for auto-fetching flight details during transfer creation and sync. Free tier works for MVP.
+              </p>
+              <div className="flex flex-col gap-4 max-w-md">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Aviationstack API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={flightApiKey}
+                    onChange={(e) => setFlightApiKey(e.target.value)}
+                    placeholder={flightApiConfigured ? '•••••••• (leave blank to keep current)' : 'Enter your API key'}
+                    className="w-full px-3 py-3 border border-input rounded-lg text-sm outline-none bg-background text-foreground focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    API Plan
+                  </label>
+                  <Dropdown
+                    value={flightApiPlan}
+                    onChange={(e) => setFlightApiPlan(e.target?.value || flightApiPlan)}
+                    options={[
+                      { value: 'free', label: 'Free' },
+                      { value: 'paid', label: 'Paid' }
+                    ]}
+                    placeholder="Select plan"
+                    minWidth="100%"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSaveFlightApi}
+                    disabled={flightApiSaving}
+                    className="px-6 py-3 bg-primary text-primary-foreground border-none rounded-lg text-sm font-medium cursor-pointer w-fit hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    {flightApiSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={handleTestFlightApi}
+                    disabled={flightApiTesting}
+                    className="px-6 py-3 bg-muted text-foreground border border-border rounded-lg text-sm font-medium cursor-pointer w-fit hover:bg-accent transition-colors disabled:opacity-50"
+                  >
+                    {flightApiTesting ? 'Testing...' : 'Test API Connection'}
                   </button>
                 </div>
               </div>

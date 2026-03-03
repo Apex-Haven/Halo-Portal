@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Transfers from './pages/Transfers'
+import TransfersEnhanced from './pages/TransfersEnhancedFixed'
 import Tracking from './pages/Tracking'
 import Flights from './pages/Flights'
 import CustomerManagement from './components/CustomerManagement'
@@ -18,6 +19,7 @@ import UserManagement from './pages/UserManagement'
 import Travelers from './pages/Travelers'
 import Drivers from './pages/Drivers'
 import TravelAdvisory from './pages/TravelAdvisory'
+import OperationsDashboard from './pages/OperationsDashboard'
 import NotFound from './pages/NotFound'
 import ProtectedRoute from './components/ProtectedRoute'
 import { useFeatures, FEATURE_KEYS } from './contexts/FeaturesContext'
@@ -81,6 +83,11 @@ const ProtectedApp = () => {
                 <Dashboard />
               </ProtectedRoute>
             } />
+            <Route path="/operations" element={
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER']} redirectTo="/transfers">
+                <OperationsDashboard />
+              </ProtectedRoute>
+            } />
             <Route path="/reports" element={
               <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
                 <Reports />
@@ -122,7 +129,8 @@ const ProtectedApp = () => {
             } />
             
             {/* Common routes (accessible by multiple roles) */}
-            <Route path="/transfers" element={<Transfers />} />
+            <Route path="/transfers" element={<TransfersEnhanced />} />
+            <Route path="/transfers-old" element={<Transfers />} />
             <Route path="/customers" element={<CustomerManagement />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="*" element={<NotFound />} />

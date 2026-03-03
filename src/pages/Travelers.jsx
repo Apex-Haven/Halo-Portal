@@ -584,18 +584,6 @@ const Travelers = () => {
             </button>
             <button
               onClick={() => {
-                setShowSyncModal(true)
-                setSyncSheetId('')
-                setSyncSheetName('')
-                setSyncResults(null)
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/90 transition-colors border border-border"
-            >
-              <RefreshCw size={20} />
-              Sync from Google Sheets
-            </button>
-            <button
-              onClick={() => {
                 resetForm()
                 setShowForm(true)
               }}

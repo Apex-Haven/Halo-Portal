@@ -11,7 +11,8 @@ import {
   Shield,
   Car,
   UserCheck,
-  MapPin
+  MapPin,
+  Activity
 } from 'lucide-react'
 
 // Define all navigation items in a flat list
@@ -21,6 +22,12 @@ const navigationItems = [
     href: '/', 
     icon: LayoutDashboard,
     roles: ['SUPER_ADMIN', 'ADMIN']
+  },
+  { 
+    name: 'Operations', 
+    href: '/operations', 
+    icon: Activity,
+    roles: ['SUPER_ADMIN', 'ADMIN', 'OPERATIONS_MANAGER']
   },
   { 
     name: 'Transfers', 

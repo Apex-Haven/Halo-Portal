@@ -7,6 +7,7 @@ import 'react-datepicker/dist/react-datepicker.css'
 import { useAuth } from '../contexts/AuthContext'
 import { useApi } from '../hooks/useApi'
 import Drawer from './Drawer'
+import Dropdown from './Dropdown'
 
 const getTravelerName = (t) => {
   if (!t) return ''
@@ -32,9 +33,20 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
     consentWhatsapp: false,
     whatsappNumber: '',
     flightBooked: false,
-    additionalDelegates: []
+    additionalDelegates: [],
+    includeReturn: true, // Mandatory by default
+    returnFlightNo: '',
+    returnAirline: '',
+    returnDepartureAirport: '',
+    returnArrivalAirport: '',
+    returnDepartureTime: '',
+    returnArrivalTime: '',
+    returnPickupLocation: '',
+    returnDropLocation: '',
+    returnEventPlace: ''
   })
   const [errors, setErrors] = useState({})
+  const [addDelegateSelectValue, setAddDelegateSelectValue] = useState('')
 
   // Format Date as YYYY-MM-DDTHH:mm for datetime-local (local time)
   const toDatetimeLocal = (d) => {
@@ -114,6 +126,16 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
         d.setHours(d.getHours() + 24)
         arrivalTime = toDatetimeLocal(d)
       }
+      const rfd = transfer.return_flight_details || {}
+      const rtd = transfer.return_transfer_details || {}
+      let returnDep = rfd.departure_time ? toDatetimeLocal(new Date(rfd.departure_time)) : ''
+      let returnArr = rfd.arrival_time ? toDatetimeLocal(new Date(rfd.arrival_time)) : ''
+      if (returnDep && (!returnArr || new Date(returnArr) <= new Date(returnDep))) {
+        const d = new Date(returnDep)
+        d.setHours(d.getHours() + 24)
+        returnArr = toDatetimeLocal(d)
+      }
+      const hasReturn = !!(transfer.return_flight_details || transfer.return_transfer_details)
       setFormData({
         flightNo: flightDetails.flight_no === 'XX000' || flightDetails.flight_no === 'TBD' ? '' : flightDetails.flight_no || '',
         airline: flightDetails.airline === 'TBD' ? '' : flightDetails.airline || '',
@@ -127,7 +149,17 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
         consentWhatsapp: !!cd.consent_whatsapp,
         whatsappNumber: cd.whatsapp_number || '',
         flightBooked: !!cd.flight_booked,
-        additionalDelegates
+        additionalDelegates,
+        includeReturn: true, // Always show return section (mandatory)
+        returnFlightNo: rfd.flight_no === 'XX000' || rfd.flight_no === 'TBD' ? '' : rfd.flight_no || '',
+        returnAirline: rfd.airline === 'TBD' ? '' : rfd.airline || '',
+        returnDepartureAirport: rfd.departure_airport === 'TBD' ? '' : rfd.departure_airport || '',
+        returnArrivalAirport: rfd.arrival_airport === 'TBD' ? '' : rfd.arrival_airport || '',
+        returnDepartureTime: returnDep,
+        returnArrivalTime: returnArr,
+        returnPickupLocation: rtd.pickup_location || '',
+        returnDropLocation: rtd.drop_location || '',
+        returnEventPlace: rtd.event_place || ''
       })
     }
   }, [isOpen, transfer])
@@ -154,7 +186,17 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
       consentWhatsapp: false,
       whatsappNumber: '',
       flightBooked: false,
-      additionalDelegates: []
+      additionalDelegates: [],
+      includeReturn: true,
+      returnFlightNo: '',
+      returnAirline: '',
+      returnDepartureAirport: '',
+      returnArrivalAirport: '',
+      returnDepartureTime: '',
+      returnArrivalTime: '',
+      returnPickupLocation: '',
+      returnDropLocation: '',
+      returnEventPlace: ''
     })
     setErrors({})
   }
@@ -216,6 +258,20 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
         }
       }
     })
+    if (formData.includeReturn) {
+      if (!formData.returnFlightNo?.trim()) newErrors.returnFlightNo = 'Return flight number is required'
+      if (!formData.returnAirline?.trim()) newErrors.returnAirline = 'Return airline is required'
+      if (!formData.returnDepartureAirport?.trim()) newErrors.returnDepartureAirport = 'Return departure airport is required'
+      if (!formData.returnArrivalAirport?.trim()) newErrors.returnArrivalAirport = 'Return arrival airport is required'
+      if (!formData.returnDepartureTime) newErrors.returnDepartureTime = 'Return departure time is required'
+      if (!formData.returnArrivalTime) newErrors.returnArrivalTime = 'Return arrival time is required'
+      if (formData.returnDepartureTime && formData.returnArrivalTime && new Date(formData.returnArrivalTime) <= new Date(formData.returnDepartureTime)) {
+        newErrors.returnArrivalTime = 'Return arrival must be after return departure'
+      }
+      if (!formData.returnPickupLocation?.trim()) newErrors.returnPickupLocation = 'Return pickup location is required'
+      if (!formData.returnDropLocation?.trim()) newErrors.returnDropLocation = 'Return drop location is required'
+      if (!formData.returnEventPlace?.trim()) newErrors.returnEventPlace = 'Return event place is required'
+    }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -289,6 +345,28 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
             delay_minutes: 0
           }
         }
+      }
+      if (formData.includeReturn && formData.returnFlightNo?.trim() && formData.returnAirline?.trim() && formData.returnDepartureAirport?.trim() && formData.returnArrivalAirport?.trim() && formData.returnDepartureTime && formData.returnArrivalTime && formData.returnPickupLocation?.trim() && formData.returnDropLocation?.trim() && formData.returnEventPlace?.trim()) {
+        payload.return_flight_details = {
+          flight_no: formData.returnFlightNo.trim().toUpperCase(),
+          airline: formData.returnAirline.trim(),
+          departure_airport: formData.returnDepartureAirport.trim(),
+          arrival_airport: formData.returnArrivalAirport.trim(),
+          departure_time: new Date(formData.returnDepartureTime).toISOString(),
+          arrival_time: new Date(formData.returnArrivalTime).toISOString(),
+          status: 'on_time',
+          delay_minutes: 0
+        }
+        payload.return_transfer_details = {
+          pickup_location: formData.returnPickupLocation.trim(),
+          drop_location: formData.returnDropLocation.trim(),
+          event_place: formData.returnEventPlace.trim(),
+          estimated_pickup_time: new Date(formData.returnDepartureTime).toISOString(),
+          special_notes: ''
+        }
+      } else {
+        payload.return_flight_details = null
+        payload.return_transfer_details = null
       }
 
       const response = await api.put(`/transfers/${transfer._id}/client-details`, payload)
@@ -567,6 +645,221 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
             </div>
 
             <div className="space-y-4 pt-6 border-t border-border">
+              <label className="flex items-center gap-2 text-sm font-semibold text-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!formData.includeReturn}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, includeReturn: e.target.checked }))}
+                  className="rounded border-input"
+                />
+                Include return transfer (round trip)
+              </label>
+            </div>
+
+            {formData.includeReturn && (
+              <div className="space-y-4 p-4 rounded-lg border border-border bg-muted/30">
+                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <Plane size={20} className="text-primary" />
+                  Return transfer
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return Flight Number <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.returnFlightNo}
+                      onChange={(e) => setFormData({ ...formData, returnFlightNo: e.target.value.toUpperCase() })}
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground placeholder:text-muted-foreground placeholder:opacity-60 focus:outline-none focus:ring-2 focus:ring-ring ${
+                        errors.returnFlightNo ? 'border-destructive' : 'border-input'
+                      }`}
+                      placeholder="e.g., AI203, EK502"
+                      maxLength="6"
+                    />
+                    {errors.returnFlightNo && <p className="text-xs text-destructive mt-1">{errors.returnFlightNo}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return Airline <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.returnAirline}
+                      onChange={(e) => setFormData({ ...formData, returnAirline: e.target.value })}
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground placeholder:text-muted-foreground placeholder:opacity-60 focus:outline-none focus:ring-2 focus:ring-ring ${
+                        errors.returnAirline ? 'border-destructive' : 'border-input'
+                      }`}
+                      placeholder="e.g., Air India, Emirates"
+                    />
+                    {errors.returnAirline && <p className="text-xs text-destructive mt-1">{errors.returnAirline}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return Departure Airport <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.returnDepartureAirport}
+                      onChange={(e) => setFormData({ ...formData, returnDepartureAirport: e.target.value.toUpperCase() })}
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground placeholder:text-muted-foreground placeholder:opacity-60 focus:outline-none focus:ring-2 focus:ring-ring ${
+                        errors.returnDepartureAirport ? 'border-destructive' : 'border-input'
+                      }`}
+                      placeholder="e.g., BOM, DEL"
+                      maxLength="3"
+                    />
+                    {errors.returnDepartureAirport && <p className="text-xs text-destructive mt-1">{errors.returnDepartureAirport}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return Arrival Airport <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.returnArrivalAirport}
+                      onChange={(e) => setFormData({ ...formData, returnArrivalAirport: e.target.value.toUpperCase() })}
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground placeholder:text-muted-foreground placeholder:opacity-60 focus:outline-none focus:ring-2 focus:ring-ring ${
+                        errors.returnArrivalAirport ? 'border-destructive' : 'border-input'
+                      }`}
+                      placeholder="e.g., DXB, JFK"
+                      maxLength="3"
+                    />
+                    {errors.returnArrivalAirport && <p className="text-xs text-destructive mt-1">{errors.returnArrivalAirport}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return Departure Time <span className="text-destructive">*</span>
+                    </label>
+                    <DatePicker
+                      selected={formData.returnDepartureTime ? new Date(formData.returnDepartureTime) : null}
+                      onChange={(date) => {
+                        if (!date) {
+                          setFormData((prev) => ({ ...prev, returnDepartureTime: '', returnArrivalTime: '' }))
+                          return
+                        }
+                        const departureTime2 = toDatetimeLocal(date)
+                        setErrors((err) => ({ ...err, returnDepartureTime: undefined }))
+                        let arrivalTime2 = formData.returnArrivalTime
+                        if (arrivalTime2 && new Date(arrivalTime2) <= new Date(departureTime2)) arrivalTime2 = ''
+                        if (!arrivalTime2) arrivalTime2 = getDefaultArrivalTime(departureTime2)
+                        setFormData({ ...formData, returnDepartureTime: departureTime2, returnArrivalTime: arrivalTime2 })
+                      }}
+                      minDate={startOfDay(new Date())}
+                      showTimeSelect
+                      timeIntervals={15}
+                      timeCaption="Time"
+                      dateFormat="dd MMM yyyy, HH:mm"
+                      placeholderText="Select date and time"
+                      filterTime={(time) => time.getTime() >= getMinTimeForFilter().getTime()}
+                      popperClassName="halo-datepicker-popper"
+                      calendarClassName="halo-datepicker-calendar"
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring dark:[color-scheme:dark] ${
+                        errors.returnDepartureTime ? 'border-destructive' : 'border-input'
+                      }`}
+                    />
+                    {errors.returnDepartureTime && <p className="text-xs text-destructive mt-1">{errors.returnDepartureTime}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return Arrival Time <span className="text-destructive">*</span>
+                    </label>
+                    <DatePicker
+                      selected={formData.returnArrivalTime ? new Date(formData.returnArrivalTime) : null}
+                      onChange={(date) => {
+                        if (!date) {
+                          setFormData((prev) => ({ ...prev, returnArrivalTime: '' }))
+                          return
+                        }
+                        const arrivalTime2 = toDatetimeLocal(date)
+                        setErrors((err) => ({ ...err, returnArrivalTime: undefined }))
+                        setFormData({ ...formData, returnArrivalTime: arrivalTime2 })
+                      }}
+                      minDate={
+                        formData.returnDepartureTime
+                          ? startOfDay(new Date(formData.returnDepartureTime))
+                          : startOfDay(new Date())
+                      }
+                      showTimeSelect
+                      timeIntervals={15}
+                      timeCaption="Time"
+                      dateFormat="dd MMM yyyy, HH:mm"
+                      placeholderText="Select date and time"
+                      filterTime={(time) => {
+                        const minT = getMinTimeForFilter()
+                        if (time.getTime() < minT.getTime()) return false
+                        if (formData.returnDepartureTime) {
+                          const dep = new Date(formData.returnDepartureTime)
+                          if (isSameDay(time, dep)) return time.getTime() > dep.getTime()
+                        }
+                        return true
+                      }}
+                      popperClassName="halo-datepicker-popper"
+                      calendarClassName="halo-datepicker-calendar"
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring dark:[color-scheme:dark] ${
+                        errors.returnArrivalTime ? 'border-destructive' : 'border-input'
+                      }`}
+                    />
+                    {errors.returnArrivalTime && <p className="text-xs text-destructive mt-1">{errors.returnArrivalTime}</p>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return pickup location <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.returnPickupLocation}
+                      onChange={(e) => setFormData({ ...formData, returnPickupLocation: e.target.value })}
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground ${
+                        errors.returnPickupLocation ? 'border-destructive' : 'border-input'
+                      }`}
+                      placeholder="e.g., Hotel / Venue"
+                    />
+                    {errors.returnPickupLocation && <p className="text-xs text-destructive mt-1">{errors.returnPickupLocation}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return drop location <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.returnDropLocation}
+                      onChange={(e) => setFormData({ ...formData, returnDropLocation: e.target.value })}
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground ${
+                        errors.returnDropLocation ? 'border-destructive' : 'border-input'
+                      }`}
+                      placeholder="e.g., Airport"
+                    />
+                    {errors.returnDropLocation && <p className="text-xs text-destructive mt-1">{errors.returnDropLocation}</p>}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Return event place <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.returnEventPlace}
+                      onChange={(e) => setFormData({ ...formData, returnEventPlace: e.target.value })}
+                      className={`w-full px-3 py-2 bg-background border rounded-lg text-foreground ${
+                        errors.returnEventPlace ? 'border-destructive' : 'border-input'
+                      }`}
+                      placeholder="e.g., Venue / Airport terminal"
+                    />
+                    {errors.returnEventPlace && <p className="text-xs text-destructive mt-1">{errors.returnEventPlace}</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4 pt-6 border-t border-border">
               <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                 <UsersIcon size={20} className="text-primary" />
                 Additional delegates
@@ -574,8 +867,9 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
               <p className="text-sm text-muted-foreground">Add delegates from your Travelers. Manage delegate details on the Travelers page.</p>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">Add delegate</label>
-                <select
-                  value=""
+                <Dropdown
+                  name="addDelegate"
+                  value={addDelegateSelectValue}
                   onChange={(e) => {
                     const id = e.target.value
                     if (!id) return
@@ -597,17 +891,18 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
                         arrivalTime2: ''
                       }]
                     }))
-                    e.target.value = ''
+                    setAddDelegateSelectValue('')
                   }}
-                  className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground"
-                >
-                  <option value="">Select a traveler...</option>
-                  {(travelers || []).filter((t) => !(formData.additionalDelegates || []).some((d) => d.travelerId === (t._id || t.id))).map((t) => (
-                    <option key={t._id || t.id} value={t._id || t.id}>
-                      {getTravelerName(t) || t.email} ({t.email})
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'Select a traveler...' },
+                    ...(travelers || []).filter((t) => !(formData.additionalDelegates || []).some((d) => d.travelerId === (t._id || t.id))).map((t) => ({
+                      value: t._id || t.id,
+                      label: `${getTravelerName(t) || t.email} (${t.email})`
+                    }))
+                  ]}
+                  placeholder="Select a traveler..."
+                  minWidth="100%"
+                />
               </div>
               {(formData.additionalDelegates || []).map((d, idx) => (
                 <div key={d.travelerId || idx} className="p-4 rounded-lg border border-border bg-muted/30 space-y-4">
@@ -619,10 +914,13 @@ const ClientTransferDetails = ({ transfer, isOpen, onClose, onSuccess }) => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">Flight same as primary?</label>
-                    <select value={d.flightSameAsPrimary ? 'yes' : 'no'} onChange={(e) => setFormData((prev) => ({ ...prev, additionalDelegates: prev.additionalDelegates.map((item, i) => (i === idx ? { ...item, flightSameAsPrimary: e.target.value === 'yes' } : item)) }))} className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground">
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
-                    </select>
+                    <Dropdown
+                      name={`flightSameAsPrimary_${idx}`}
+                      value={d.flightSameAsPrimary ? 'yes' : 'no'}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, additionalDelegates: prev.additionalDelegates.map((item, i) => (i === idx ? { ...item, flightSameAsPrimary: e.target.value === 'yes' } : item)) }))}
+                      options={[{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]}
+                      minWidth="100%"
+                    />
                   </div>
                   {!d.flightSameAsPrimary && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
