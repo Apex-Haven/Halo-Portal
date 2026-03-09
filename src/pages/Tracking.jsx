@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MapPin, Clock, User, Car, Navigation, CheckCircle, Circle, AlertCircle, Plane, ChevronDown } from 'lucide-react';
+import { MapPin, Clock, User, Car, Navigation, CheckCircle, Circle, AlertCircle, Plane, ChevronDown, Building2 } from 'lucide-react';
 import LiveMap from '../components/LiveMap';
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
@@ -45,7 +45,7 @@ const Tracking = () => {
     }
   }, [trackingId]);
 
-  // Build tracking steps: Transfer Requested → Driver Assigned → Transfer Started (auto) → Arrival Completed → [Return: Departure Driver → Departure Completed] → Transfer Completed
+  // Build tracking steps: Transfer Requested → Driver Assigned → Transfer Started → Arrival Completed → [Return: Departure Driver → Departure Completed] → Transfer Completed
   const buildTrackingStepsFromTransfer = (t) => {
     if (!t) return [];
     const onwardStatus = t.transfer_details?.transfer_status || t.transfer_details?.status || 'pending';
@@ -53,14 +53,18 @@ const Tracking = () => {
     const hasDriver = !!t.assigned_driver_details;
     const onwardCompleted = onwardStatus === 'completed';
     const hasReturn = !!(t.return_transfer_details || t.return_flight_details);
-    const returnDriverAssigned = hasReturn && returnStatus && returnStatus !== 'pending';
+    // Driver Assigned: status is 'assigned' or later (or has assigned_driver_details)
+    const driverAssigned = hasDriver || ['assigned', 'enroute', 'waiting', 'in_progress', 'completed'].includes(onwardStatus);
+    // Transfer Started: driver has begun (enroute, waiting, in_progress, or completed) - not just assigned
+    const transferStarted = ['enroute', 'waiting', 'in_progress', 'completed'].includes(onwardStatus);
+    const returnDriverAssigned = hasReturn && (!!t.return_assigned_driver_details || ['assigned', 'enroute', 'waiting', 'in_progress', 'completed'].includes(returnStatus));
     const returnCompleted = hasReturn && returnStatus === 'completed';
     const allCompleted = onwardCompleted && (!hasReturn || returnCompleted);
 
     const steps = [
       { id: 1, title: 'Transfer Requested', description: 'Your transfer request has been received', status: 'completed', time: null },
-      { id: 2, title: 'Driver Assigned (Arrival)', description: hasDriver ? `Driver: ${t.assigned_driver_details?.name || 'N/A'}` : 'Vendor will assign a driver', status: hasDriver ? 'completed' : 'pending', time: null },
-      { id: 3, title: 'Transfer Started', description: 'Transfer has begun', status: hasDriver ? 'completed' : 'pending', time: null },
+      { id: 2, title: 'Driver Assigned (Arrival)', description: driverAssigned ? `Driver: ${t.assigned_driver_details?.name || 'N/A'}` : 'Vendor will assign a driver', status: driverAssigned ? 'completed' : 'pending', time: null },
+      { id: 3, title: 'Transfer Started', description: 'Transfer has begun', status: transferStarted ? 'completed' : 'pending', time: null },
       { id: 4, title: hasReturn ? 'Arrival Transfer Completed' : 'Transfer Completed', description: 'You have reached your destination', status: onwardCompleted ? 'completed' : 'pending', time: null }
     ];
 
@@ -474,6 +478,18 @@ const Tracking = () => {
                           <p className="text-base font-medium text-foreground">{transfer.transfer_details?.drop_location || '—'}</p>
                         </div>
                       </div>
+                      {(transfer.transfer_details?.event_place && transfer.transfer_details.event_place !== 'Event (TBD)') && (
+                        <div className="pt-2 border-t border-border">
+                          <span className="text-xs text-muted-foreground">Event</span>
+                          <p className="text-sm font-medium text-foreground">{transfer.transfer_details.event_place}</p>
+                        </div>
+                      )}
+                      {(transfer.transfer_details?.special_notes) && (
+                        <div className="pt-2 border-t border-border">
+                          <span className="text-xs text-muted-foreground">Special notes</span>
+                          <p className="text-sm text-foreground mt-0.5">{transfer.transfer_details.special_notes}</p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Return Trip (when available) */}
@@ -610,15 +626,90 @@ const Tracking = () => {
                       </div>
                     )}
 
-                    {/* Traveler */}
-                    {(transfer.traveler_details?.name || transfer.customer_details?.name) && (
-                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4">
-                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-2">
+                    {/* Traveler – full info including passport */}
+                    {(transfer.customer_details || transfer.traveler_details) && (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-4">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2">
                           <User size={16} /> Traveler
                         </h3>
-                        <p className="text-base font-medium text-foreground">
-                          {transfer.traveler_details?.name || transfer.customer_details?.name}
-                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {(transfer.customer_details?.name || transfer.traveler_details?.name) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Name</span>
+                              <p className="text-base font-medium text-foreground">
+                                {transfer.customer_details?.name || transfer.traveler_details?.name}
+                              </p>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.name_as_per_passport || transfer.traveler_details?.name_as_per_passport) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Name as per passport</span>
+                              <p className="text-base font-medium text-foreground">
+                                {transfer.customer_details?.name_as_per_passport || transfer.traveler_details?.name_as_per_passport}
+                              </p>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.passport_number || transfer.traveler_details?.passport_number) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Passport number</span>
+                              <p className="text-base font-mono font-medium text-foreground">
+                                {transfer.customer_details?.passport_number || transfer.traveler_details?.passport_number}
+                              </p>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.email || transfer.traveler_details?.email) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Email</span>
+                              <a href={`mailto:${transfer.customer_details?.email || transfer.traveler_details?.email}`} className="text-base text-primary font-medium hover:underline">
+                                {transfer.customer_details?.email || transfer.traveler_details?.email}
+                              </a>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.contact_number || transfer.traveler_details?.contact_number) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Contact</span>
+                              <a href={`tel:${transfer.customer_details?.contact_number || transfer.traveler_details?.contact_number}`} className="text-base text-primary font-medium hover:underline">
+                                {transfer.customer_details?.contact_number || transfer.traveler_details?.contact_number}
+                              </a>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.whatsapp_number) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">WhatsApp</span>
+                              <a href={`https://wa.me/${transfer.customer_details.whatsapp_number.replace(/\D/g, '')}`} className="text-base text-primary font-medium hover:underline">
+                                {transfer.customer_details.whatsapp_number}
+                              </a>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.company_name || transfer.traveler_details?.company_name) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Company</span>
+                              <p className="text-base font-medium text-foreground">
+                                {transfer.customer_details?.company_name || transfer.traveler_details?.company_name}
+                              </p>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.job_position || transfer.traveler_details?.job_position) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Job position</span>
+                              <p className="text-base font-medium text-foreground">
+                                {transfer.customer_details?.job_position || transfer.traveler_details?.job_position}
+                              </p>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.no_of_passengers != null) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Passengers</span>
+                              <p className="text-base font-medium text-foreground">{transfer.customer_details.no_of_passengers}</p>
+                            </div>
+                          )}
+                          {(transfer.customer_details?.luggage_count != null) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Luggage</span>
+                              <p className="text-base font-medium text-foreground">{transfer.customer_details.luggage_count}</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -646,8 +737,31 @@ const Tracking = () => {
                     )}
                   </div>
 
-                  {/* Right column: Driver */}
-                  <div className="lg:col-span-1">
+                  {/* Right column: Vendor & Driver */}
+                  <div className="lg:col-span-1 space-y-4">
+                    {transfer.vendor_details && (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-3">
+                          <Building2 size={16} /> Vendor
+                        </h3>
+                        <div className="space-y-2">
+                          <p className="text-base font-medium text-foreground">{transfer.vendor_details.vendor_name}</p>
+                          {transfer.vendor_details.contact_person && (
+                            <p className="text-sm text-muted-foreground">{transfer.vendor_details.contact_person}</p>
+                          )}
+                          {transfer.vendor_details.contact_number && (
+                            <a href={`tel:${transfer.vendor_details.contact_number}`} className="text-sm text-primary hover:underline block">
+                              {transfer.vendor_details.contact_number}
+                            </a>
+                          )}
+                          {transfer.vendor_details.email && (
+                            <a href={`mailto:${transfer.vendor_details.email}`} className="text-sm text-primary hover:underline block">
+                              {transfer.vendor_details.email}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {transfer.assigned_driver_details ? (
                       <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 sticky top-4">
                         <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-4">
@@ -690,7 +804,7 @@ const Tracking = () => {
                       </div>
                     ) : (
                       <div className="rounded-xl border border-dashed border-border bg-muted/10 p-4 text-center">
-                        <User size={24} className="mx-auto text-muted-foreground mb-2" />
+                        <Car size={24} className="mx-auto text-muted-foreground mb-2" />
                         <p className="text-sm text-muted-foreground">Driver not assigned yet</p>
                       </div>
                     )}

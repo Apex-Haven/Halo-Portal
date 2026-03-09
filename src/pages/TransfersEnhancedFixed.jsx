@@ -34,9 +34,11 @@ const TransfersEnhanced = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [transferToDelete, setTransferToDelete] = useState(null)
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
+  const [deleteAllBulk, setDeleteAllBulk] = useState(false)
   const [showTransferSyncModal, setShowTransferSyncModal] = useState(false)
   const [transferSyncSheetId, setTransferSyncSheetId] = useState('')
   const [transferSyncSheetName, setTransferSyncSheetName] = useState('')
+  const [transferSyncGid, setTransferSyncGid] = useState('')
   const [transferSyncing, setTransferSyncing] = useState(false)
   const [transferSyncResults, setTransferSyncResults] = useState(null)
   const [transferSyncProgress, setTransferSyncProgress] = useState({ message: '', percentage: 0 })
@@ -258,7 +260,12 @@ const TransfersEnhanced = () => {
   }
 
   // Quick status change
-  const handleQuickStatusChange = async (transferId, newStatus) => {
+  const handleQuickStatusChange = async (transferId, newStatus, transfer) => {
+    if (newStatus === 'assigned') {
+      setSelectedTransfer(transfer)
+      setShowDetailsModal(true)
+      return
+    }
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const token = localStorage.getItem('token');
@@ -287,14 +294,17 @@ const TransfersEnhanced = () => {
 
   // Bulk delete
   const handleBulkDelete = async () => {
-    if (selectedTransfers.length === 0) return
+    const isDeleteAll = deleteAllBulk
+    if (!isDeleteAll && selectedTransfers.length === 0) return
     setShowBulkDeleteConfirm(false)
+    setDeleteAllBulk(false)
     setBulkLoading(true)
     try {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
       const token = localStorage.getItem('token')
+      const payload = isDeleteAll ? { deleteAllBulk: true } : { transferIds: selectedTransfers }
       const response = await axios.delete(`${API_BASE_URL}/bulk-operations`, {
-        data: { transferIds: selectedTransfers },
+        data: payload,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -303,6 +313,7 @@ const TransfersEnhanced = () => {
       if (response.data.success) {
         toast.success(response.data.message)
         setSelectedTransfers([])
+        setDeleteAllBulk(false)
         fetchTransfers()
       } else {
         toast.error(response.data.message || 'Failed to delete transfers')
@@ -490,7 +501,11 @@ const TransfersEnhanced = () => {
       }, 2000)
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
       const token = localStorage.getItem('token')
-      const body = { sheetId: transferSyncSheetId.trim(), sheetName: transferSyncSheetName.trim() || undefined }
+      const body = {
+        sheetId: transferSyncSheetId.trim(),
+        sheetName: transferSyncSheetName.trim() || undefined,
+        gid: transferSyncGid.trim() ? parseInt(transferSyncGid.trim(), 10) : undefined
+      }
       if (isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) body.customerId = transferSyncCustomerId
       const response = await axios.post(`${API_BASE_URL}/transfers/sync-from-registration-sheet`, body, {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -639,265 +654,171 @@ const TransfersEnhanced = () => {
     const isReturnDepartureMissing = hasReturnTransfer && 
       (!transfer.return_transfer_details?.estimated_pickup_time || !transfer.return_flight_details?.departure_time)
 
+    const hasReturnIssues = isReturnFlightMissing || isReturnDepartureMissing
+
     return (
-      <div className={`bg-card rounded-xl shadow-sm border border-border overflow-hidden transition-all ${
-        isSelected ? 'ring-2 ring-primary ring-offset-2' : ''
+      <div className={`group bg-card rounded-xl border border-border overflow-hidden transition-all hover:border-muted-foreground/30 ${
+        isSelected ? 'ring-2 ring-primary ring-offset-2 border-primary/50' : ''
       }`}>
-        {/* Card header with checkbox */}
-        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/40">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              {canManageTransfers && (
-                <button
-                  onClick={() => handleTransferSelect(transfer._id, !isSelected)}
-                  className="flex-shrink-0"
-                >
-                  {isSelected ? (
-                    <CheckSquare size={18} className="text-primary" />
-                  ) : (
-                    <Square size={18} className="text-muted-foreground" />
-                  )}
-                </button>
-              )}
-              
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {transfer._id?.slice(-8) || 'N/A'}
-                  </span>
-                  {transfer.priority === 'high' && (
-                    <AlertTriangle size={14} className="text-red-500" />
-                  )}
-                  {transfer.priority === 'vip' && (
-                    <span className="text-xs bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 px-2 py-1 rounded-full">VIP</span>
-                  )}
-                  {hasReturnTransfer && (
-                    <span className="text-xs bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full">
-                      Round Trip
-                    </span>
-                  )}
-                  {isReturnFlightMissing && (
-                    <span className="text-xs bg-red-100 dark:bg-red-900/60 text-red-800 dark:text-red-200 px-2 py-1 rounded-full">
-                      Return Flight Missing
-                    </span>
-                  )}
-                  {isReturnDepartureMissing && (
-                    <span className="text-xs bg-orange-100 dark:bg-orange-900/60 text-orange-800 dark:text-orange-200 px-2 py-1 rounded-full">
-                      Return Departure Missing
-                    </span>
-                  )}
-                </div>
-                
-                <div className="font-semibold text-foreground truncate">
-                  {clientName || 'Unknown Customer'}
-                </div>
-                {travelerName && (
-                  <div className="text-sm text-muted-foreground">
-                    Traveler: {travelerName}
-                  </div>
+        {/* Card header */}
+        <div className="px-4 sm:px-5 py-3.5 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            {canManageTransfers && (
+              <button
+                onClick={() => handleTransferSelect(transfer._id, !isSelected)}
+                className={`flex-shrink-0 mt-0.5 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+              >
+                {isSelected ? (
+                  <CheckSquare size={18} className="text-primary" />
+                ) : (
+                  <Square size={18} className="text-muted-foreground" />
+                )}
+              </button>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span className="font-mono text-xs text-muted-foreground">
+                  {transfer._id?.slice(-8) || 'N/A'}
+                </span>
+                {transfer.priority === 'high' && (
+                  <AlertTriangle size={12} className="text-amber-500 flex-shrink-0" />
+                )}
+                {transfer.priority === 'vip' && (
+                  <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">VIP</span>
+                )}
+                {hasReturnTransfer && (
+                  <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Round Trip</span>
                 )}
               </div>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(status)}`}>
-                {status}
-              </span>
+              <div className="font-semibold text-foreground truncate">
+                {clientName || 'Unknown Customer'}
+              </div>
+              {travelerName && (
+                <div className="text-sm text-muted-foreground truncate">{travelerName}</div>
+              )}
             </div>
           </div>
+          <span className={`flex-shrink-0 px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getStatusColor(status)}`}>
+            {status.replace('_', ' ')}
+          </span>
         </div>
 
         {/* Card body */}
-        <div className="p-4 space-y-4">
-          {/* Onward Transfer */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Plane size={14} className="text-muted-foreground" />
-              <span>Onward Transfer</span>
+        <div className="px-4 sm:px-5 pb-4 space-y-4">
+          {/* Onward */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <Plane size={12} />
+              Onward
             </div>
-            
-            {/* Onward Route */}
-            <div className="flex items-center gap-2 text-sm ml-6">
-              <MapPin size={14} className="text-muted-foreground" />
-              <span className="truncate">
-                {transfer.transfer_details?.pickup_location} → {transfer.transfer_details?.drop_location}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm pl-4">
+              <span className="text-foreground">
+                {transfer.transfer_details?.pickup_location || '—'} → {transfer.transfer_details?.drop_location || '—'}
               </span>
-            </div>
-
-            {/* Onward Time and Flight */}
-            <div className="grid grid-cols-2 gap-3 text-sm ml-6">
-              <div className="flex items-center gap-2">
-                <Clock size={14} className="text-muted-foreground" />
-                <span>
-                  {new Date(transfer.transfer_details?.estimated_pickup_time).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </span>
-              </div>
+              <span className="text-muted-foreground">
+                {new Date(transfer.transfer_details?.estimated_pickup_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
               {hasOnwardFlight ? (
-                <div className="flex items-center gap-2">
-                  <Plane size={14} className="text-muted-foreground" />
-                  <span>{transfer.flight_details?.flight_no || transfer.flight_details?.flight_number}</span>
-                  {transfer.flight_details?.departure_time && (
-                    <span className="text-xs text-muted-foreground">
-                      ({new Date(transfer.flight_details.departure_time).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })})
-                    </span>
-                  )}
-                </div>
+                <span className="font-medium">{transfer.flight_details?.flight_no || transfer.flight_details?.flight_number}</span>
               ) : (
-                <div className="flex items-center gap-2 text-red-500">
-                  <AlertTriangle size={14} />
-                  <span className="text-xs">Flight Missing</span>
-                </div>
+                <span className="text-amber-600 dark:text-amber-400 text-xs">Flight TBD</span>
               )}
             </div>
           </div>
 
-          {/* Return Transfer */}
+          {/* Return */}
           {hasReturnTransfer && (
-            <div className="space-y-3 border-t border-border pt-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Plane size={14} className="text-muted-foreground rotate-180" />
-                <span>Return Transfer</span>
-                {isReturnFlightMissing && (
-                  <AlertTriangle size={14} className="text-red-500" />
-                )}
-                {isReturnDepartureMissing && (
-                  <AlertTriangle size={14} className="text-orange-500" />
-                )}
+            <div className="space-y-2 pt-3 border-t border-border/60">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <Plane size={12} className="rotate-180" />
+                Return
               </div>
-              
-              {/* Return Route */}
-              <div className="flex items-center gap-2 text-sm ml-6">
-                <MapPin size={14} className="text-muted-foreground" />
-                <span className="truncate">
-                  {transfer.return_transfer_details?.pickup_location || 'TBD'} → {transfer.return_transfer_details?.drop_location || 'TBD'}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm pl-4">
+                <span className="text-foreground">
+                  {transfer.return_transfer_details?.pickup_location || '—'} → {transfer.return_transfer_details?.drop_location || '—'}
                 </span>
-              </div>
-
-              {/* Return Time and Flight */}
-              <div className="grid grid-cols-2 gap-3 text-sm ml-6">
-                <div className="flex items-center gap-2">
-                  <Clock size={14} className="text-muted-foreground" />
-                  <span>
-                    {transfer.return_transfer_details?.estimated_pickup_time ? 
-                      new Date(transfer.return_transfer_details.estimated_pickup_time).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      }) : 'Time Missing'
-                    }
-                  </span>
-                </div>
+                <span className="text-muted-foreground">
+                  {transfer.return_transfer_details?.estimated_pickup_time
+                    ? new Date(transfer.return_transfer_details.estimated_pickup_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : '—'}
+                </span>
                 {hasReturnFlight ? (
-                  <div className="flex items-center gap-2">
-                    <Plane size={14} className="text-muted-foreground" />
-                    <span>{transfer.return_flight_details.flight_no}</span>
-                    {transfer.return_flight_details?.departure_time && (
-                      <span className="text-xs text-muted-foreground">
-                        ({new Date(transfer.return_flight_details.departure_time).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })})
-                      </span>
-                    )}
-                  </div>
+                  <span className="font-medium">{transfer.return_flight_details?.flight_no}</span>
                 ) : (
-                  <div className="flex items-center gap-2 text-red-500">
-                    <AlertTriangle size={14} />
-                    <span className="text-xs">Flight Missing</span>
-                  </div>
+                  <span className="text-amber-600 dark:text-amber-400 text-xs">Flight TBD</span>
                 )}
               </div>
-
-              {/* Return specific warnings */}
-              {isReturnFlightMissing && (
-                <div className="ml-6 p-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded text-xs text-red-700 dark:text-red-300">
-                  ⚠️ Return flight details are missing. Please add return flight information.
-                </div>
-              )}
-              
-              {isReturnDepartureMissing && (
-                <div className="ml-6 p-2 bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded text-xs text-orange-700 dark:text-orange-300">
-                  ⚠️ Return departure date/time is missing. Please add return transfer details.
-                </div>
+              {hasReturnIssues && (
+                <p className="pl-4 text-xs text-amber-600 dark:text-amber-400">
+                  Add return flight details in transfer settings
+                </p>
               )}
             </div>
           )}
 
-          {/* Vendor and Driver */}
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            {transfer.vendor_details?.vendor_name && (
-              <div className="flex items-center gap-2">
-                <Building2 size={14} className="text-muted-foreground" />
-                <span className="truncate">{transfer.vendor_details.vendor_name}</span>
-              </div>
+          {/* Vendor & Driver - click Assigned to view details */}
+          <div className="flex flex-wrap gap-3 text-sm">
+            {transfer.vendor_details?.vendor_name ? (
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Building2 size={12} />
+                {transfer.vendor_details.vendor_name}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-xs">
+                <Building2 size={12} />
+                No vendor
+              </span>
             )}
-            {transfer.assigned_driver_details?.name && (
-              <div className="flex items-center gap-2">
-                <Car size={14} className="text-muted-foreground" />
-                <span className="truncate">{transfer.assigned_driver_details.name}</span>
-              </div>
+            {transfer.assigned_driver_details?.name ? (
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <Car size={12} />
+                {transfer.assigned_driver_details.name}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-muted-foreground/60 text-xs">
+                <Car size={12} />
+                No driver
+              </span>
             )}
           </div>
 
-          {/* Quick Actions */}
-          <div className="flex items-center justify-between pt-3 border-t border-border">
-            <div className="flex items-center gap-2">
-              {canManageTransfers && (
-                <div className="flex items-center gap-1">
-                  {['pending', 'assigned', 'in_progress', 'completed'].map(statusValue => (
-                    <button
-                      key={statusValue}
-                      onClick={() => handleQuickStatusChange(transfer._id, statusValue)}
-                      disabled={statusValue === status}
-                      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                        statusValue === status 
-                          ? 'bg-muted text-muted-foreground cursor-not-allowed'
-                          : 'bg-background hover:bg-muted border border-border'
-                      }`}
-                    >
-                      {statusValue.charAt(0).toUpperCase() + statusValue.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="flex items-center gap-1">
+          {/* Actions */}
+          <div className="flex items-center justify-between pt-3 border-t border-border/60">
+            {canManageTransfers && (
+              <div className="flex gap-1 p-0.5 rounded-lg bg-muted/50">
+                {['pending', 'assigned', 'in_progress', 'completed'].map(statusValue => (
+                  <button
+                    key={statusValue}
+                    onClick={() => handleQuickStatusChange(transfer._id, statusValue, transfer)}
+                    disabled={statusValue === status && statusValue !== 'assigned'}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      statusValue === status
+                        ? 'bg-background shadow-sm text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    title={statusValue === 'assigned' ? 'View vendor & driver assignment' : `Set status to ${statusValue}`}
+                  >
+                    {statusValue.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-0.5">
               <button
-                onClick={() => {
-                  setSelectedTransfer(transfer)
-                  setShowDetailsModal(true)
-                }}
-                className="p-1 rounded hover:bg-muted text-muted-foreground"
-                title="View details"
+                onClick={() => { setSelectedTransfer(transfer); setShowDetailsModal(true) }}
+                className="p-2 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                title="View / Edit"
               >
-                <Eye size={14} />
+                <Eye size={16} />
               </button>
               {canManageTransfers && (
-                <>
-                  <button
-                    onClick={() => {
-                      setSelectedTransfer(transfer)
-                      setShowDetailsModal(true)
-                    }}
-                    className="p-1 rounded hover:bg-muted text-muted-foreground"
-                    title="Edit transfer"
-                  >
-                    <Edit size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteClick(transfer)}
-                    className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400"
-                    title="Delete"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </>
+                <button
+                  onClick={() => handleDeleteClick(transfer)}
+                  className="p-2 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 size={16} />
+                </button>
               )}
             </div>
           </div>
@@ -1209,15 +1130,16 @@ const TransfersEnhanced = () => {
                                 {['pending', 'assigned', 'in_progress', 'completed'].map(statusValue => (
                                   <button
                                     key={statusValue}
-                                    onClick={() => handleQuickStatusChange(transfer._id, statusValue)}
-                                    disabled={statusValue === status}
+                                    onClick={() => handleQuickStatusChange(transfer._id, statusValue, transfer)}
+                                    disabled={statusValue === status && statusValue !== 'assigned'}
                                     className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
                                       statusValue === status 
-                                        ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                                        ? 'bg-muted text-muted-foreground'
                                         : 'bg-background hover:bg-muted border border-border'
                                     }`}
+                                    title={statusValue === 'assigned' ? 'View vendor & driver assignment' : undefined}
                                   >
-                                    {statusValue.charAt(0).toUpperCase() + statusValue.slice(1)}
+                                    {statusValue.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                   </button>
                                 ))}
                               </div>
@@ -1356,12 +1278,21 @@ const TransfersEnhanced = () => {
                   )
                 })()}
                 <button
-                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  onClick={() => { setDeleteAllBulk(false); setShowBulkDeleteConfirm(true) }}
                   disabled={bulkLoading}
                   className="px-3 py-1.5 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50 text-sm flex items-center gap-1"
                 >
                   <Trash2 size={14} />
-                  Delete
+                  Delete ({selectedTransfers.length})
+                </button>
+                <button
+                  onClick={() => { setDeleteAllBulk(true); setShowBulkDeleteConfirm(true) }}
+                  disabled={bulkLoading || filteredTransfers.length === 0}
+                  className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 text-sm flex items-center gap-1"
+                  title="Delete all transfers (respects current filters)"
+                >
+                  <Trash2 size={14} />
+                  Delete all ({filteredTransfers.length})
                 </button>
                 <button
                   onClick={() => handleExport('csv')}
@@ -1431,9 +1362,9 @@ const TransfersEnhanced = () => {
           <TimelineView />
         ) : (
           <div className="space-y-4">
-            {/* Select all on current page */}
+            {/* Select page / Select all */}
             {canManageTransfers && paginatedTransfers.length > 0 && (
-              <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
+              <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg flex-wrap">
                 <button
                   onClick={() => {
                     const pageIds = paginatedTransfers.map(t => t._id)
@@ -1453,6 +1384,19 @@ const TransfersEnhanced = () => {
                   )}
                   <span className="text-sm">
                     {paginatedTransfers.every(t => selectedTransfers.includes(t._id)) ? 'Deselect page' : 'Select page'}
+                  </span>
+                </button>
+                <button
+                  onClick={() => handleSelectAll(selectedTransfers.length < filteredTransfers.length)}
+                  className="flex items-center gap-2"
+                >
+                  {selectedTransfers.length === filteredTransfers.length && filteredTransfers.length > 0 ? (
+                    <CheckSquare size={18} className="text-primary" />
+                  ) : (
+                    <Square size={18} className="text-muted-foreground" />
+                  )}
+                  <span className="text-sm">
+                    {selectedTransfers.length === filteredTransfers.length && filteredTransfers.length > 0 ? 'Deselect all' : 'Select all'}
                   </span>
                 </button>
                 <span className="text-sm text-muted-foreground">
@@ -1502,6 +1446,7 @@ const TransfersEnhanced = () => {
             setShowTransferSyncModal(false)
             setTransferSyncSheetId('')
             setTransferSyncSheetName('')
+            setTransferSyncGid('')
             setTransferSyncResults(null)
             setTransferSyncCustomerId('')
           }}
@@ -1519,13 +1464,13 @@ const TransfersEnhanced = () => {
                     How this works:
                   </h3>
                   <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
-                    <li>Use your event registration Google Form that collects Delegate 1 and optional Delegate 2, plus flight details.</li>
-                    <li>Make the sheet <strong>public</strong> (File → Share → Anyone with the link can view).</li>
+                    <li>Use a sheet with columns: Company Name, First Name, Last Name, Email, Contact No, Check In Date, Flight No, ETA (onward), Check Out Date, Flight No, ETD (return).</li>
+                    <li>Make the sheet <strong>public</strong> (Share → Anyone with the link can view).</li>
                     <li>Copy the Sheet ID from the URL and paste it below.</li>
-                    <li>Each row will create one transfer for Delegate 1, with Delegate 2 stored as plus-one inside that transfer.</li>
+                    <li>Each row creates one transfer. For multi-sheet workbooks, set Sheet Tab ID (gid) from the URL <code className="bg-muted px-1 rounded">#gid=123</code>.</li>
                   </ol>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mt-3">
-                    Existing transfers are not modified. This feature is ideal for generating transfers in bulk from a confirmed registration sheet.
+                    Existing transfers are not modified. Dates like 7/5/2026 and times like 8:25 AM are supported.
                   </p>
                 </div>
 
@@ -1571,15 +1516,18 @@ const TransfersEnhanced = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">Sheet Name (Optional)</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">Sheet Tab ID <span className="text-muted-foreground font-normal">(Optional)</span></label>
                   <input
                     type="text"
-                    value={transferSyncSheetName}
-                    onChange={(e) => setTransferSyncSheetName(e.target.value)}
-                    placeholder="e.g., Form Responses 1, Sheet1, or leave empty for first sheet"
+                    value={transferSyncGid}
+                    onChange={(e) => setTransferSyncGid(e.target.value)}
+                    placeholder="e.g., 0 for first sheet, or gid from URL #gid=123"
                     className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     disabled={transferSyncing}
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Leave empty for the first sheet. For other sheets, copy the number from the URL <code className="bg-muted px-1 rounded">#gid=123</code>.
+                  </p>
                 </div>
 
                 {transferSyncing && (
@@ -1651,7 +1599,7 @@ const TransfersEnhanced = () => {
               <div className="flex gap-3 px-6 py-5">
                 <button
                   type="button"
-                  onClick={() => { setShowTransferSyncModal(false); setTransferSyncSheetId(''); setTransferSyncSheetName(''); setTransferSyncResults(null) }}
+                  onClick={() => { setShowTransferSyncModal(false); setTransferSyncSheetId(''); setTransferSyncSheetName(''); setTransferSyncGid(''); setTransferSyncResults(null) }}
                   className="flex-1 px-4 py-2.5 bg-background border-2 border-border rounded-lg text-foreground font-semibold hover:bg-muted"
                   disabled={transferSyncing}
                 >
@@ -1888,7 +1836,7 @@ const TransfersEnhanced = () => {
         })()}
 
         {/* Bulk Delete Confirmation Modal */}
-        {showBulkDeleteConfirm && selectedTransfers.length > 0 && (
+        {showBulkDeleteConfirm && (selectedTransfers.length > 0 || deleteAllBulk) && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full mx-4">
               <div className="flex items-center gap-3 mb-4">
@@ -1896,17 +1844,22 @@ const TransfersEnhanced = () => {
                   <Trash2 size={24} className="text-destructive" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-foreground">Delete Transfers</h3>
+                  <h3 className="text-lg font-semibold text-foreground">
+                    {deleteAllBulk ? 'Delete All Transfers' : 'Delete Transfers'}
+                  </h3>
                   <p className="text-sm text-muted-foreground">This action cannot be undone</p>
                 </div>
               </div>
               <p className="text-sm text-foreground mb-6">
-                Are you sure you want to delete <strong>{selectedTransfers.length}</strong> transfer{selectedTransfers.length !== 1 ? 's' : ''}?
-                This will permanently remove {selectedTransfers.length === 1 ? 'this transfer' : 'these transfers'} from the system.
+                {deleteAllBulk ? (
+                  <>Are you sure you want to delete <strong>all</strong> transfers you have access to? This will permanently remove them from the system.</>
+                ) : (
+                  <>Are you sure you want to delete <strong>{selectedTransfers.length}</strong> transfer{selectedTransfers.length !== 1 ? 's' : ''}? This will permanently remove {selectedTransfers.length === 1 ? 'this transfer' : 'these transfers'} from the system.</>
+                )}
               </p>
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowBulkDeleteConfirm(false)}
+                  onClick={() => { setShowBulkDeleteConfirm(false); setDeleteAllBulk(false) }}
                   disabled={bulkLoading}
                   className="flex-1 px-4 py-2 bg-background border-2 border-border rounded-lg text-foreground font-semibold hover:bg-muted transition-all"
                 >
@@ -2067,24 +2020,29 @@ const TransfersEnhanced = () => {
           )
         })()}
 
-        {/* Simple Details Modal */}
+        {/* Transfer Details Modal */}
         {showDetailsModal && selectedTransfer && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
-            <div className="bg-card rounded-lg border border-border p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-              <h3 className="text-lg font-semibold mb-4">Transfer Details</h3>
-              <div className="space-y-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
+            <div className="bg-card rounded-xl border border-border shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                 <div>
-                  <strong>Transfer ID:</strong> {selectedTransfer._id}
+                  <h3 className="text-lg font-semibold text-foreground">
+                    {selectedTransfer._id}
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {getClientAndTravelerNames(selectedTransfer).clientName}
+                    {getClientAndTravelerNames(selectedTransfer).travelerName && (
+                      <> · {getClientAndTravelerNames(selectedTransfer).travelerName}</>
+                    )}
+                  </p>
                 </div>
+                <span className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getStatusColor(selectedTransfer.transfer_details?.transfer_status || 'pending')}`}>
+                  {selectedTransfer.transfer_details?.transfer_status?.replace('_', ' ') || 'pending'}
+                </span>
+              </div>
+              <div className="p-6 overflow-y-auto space-y-5">
+                {/* Onward Transfer */}
                 <div>
-                  <strong>Customer:</strong> {getClientAndTravelerNames(selectedTransfer).clientName}
-                </div>
-                <div>
-                  <strong>Traveler:</strong> {getClientAndTravelerNames(selectedTransfer).travelerName}
-                </div>
-                
-                {/* Onward Transfer Section */}
-                <div className="border-t border-border pt-4">
                   <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
                     <Plane size={16} className="text-muted-foreground" />
                     Onward Transfer
@@ -2209,27 +2167,45 @@ const TransfersEnhanced = () => {
                   )
                 })()}
 
-                {/* Vendor and Driver Info */}
-                <div className="border-t border-border pt-4">
-                  <h4 className="font-medium text-foreground mb-3">Assignment Details</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    {selectedTransfer.vendor_details?.vendor_name && (
-                      <div>
-                        <strong>Vendor:</strong> {selectedTransfer.vendor_details.vendor_name}
-                      </div>
-                    )}
-                    {selectedTransfer.assigned_driver_details?.name && (
-                      <div>
-                        <strong>Driver:</strong> {selectedTransfer.assigned_driver_details.name}
-                      </div>
-                    )}
+                {/* Vendor & Driver Assignment - highlighted when opened from Assigned */}
+                <div className="rounded-lg border border-border bg-muted/30 p-4">
+                  <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
+                    <Building2 size={16} className="text-muted-foreground" />
+                    Vendor & Driver Assignment
+                  </h4>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Vendor</p>
+                      <p className="font-medium text-foreground">
+                        {selectedTransfer.vendor_details?.vendor_name || (
+                          <span className="text-muted-foreground italic">Not assigned</span>
+                        )}
+                      </p>
+                      {selectedTransfer.vendor_details?.email && (
+                        <p className="text-sm text-muted-foreground">{selectedTransfer.vendor_details.email}</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Driver</p>
+                      <p className="font-medium text-foreground">
+                        {selectedTransfer.assigned_driver_details?.name || (
+                          <span className="text-muted-foreground italic">Not assigned</span>
+                        )}
+                      </p>
+                      {(selectedTransfer.assigned_driver_details?.contact_number || selectedTransfer.assigned_driver_details?.vehicle_number) && (
+                        <p className="text-sm text-muted-foreground">
+                          {selectedTransfer.assigned_driver_details.contact_number}
+                          {selectedTransfer.assigned_driver_details.vehicle_number && ` · ${selectedTransfer.assigned_driver_details.vehicle_number}`}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-              <div className="flex gap-3 mt-4">
+              <div className="px-6 py-4 border-t border-border flex justify-end">
                 <button
                   onClick={() => setShowDetailsModal(false)}
-                  className="flex-1 px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80"
+                  className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 font-medium"
                 >
                   Close
                 </button>
