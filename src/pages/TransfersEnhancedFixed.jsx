@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { 
-  Search, Filter, Plus, Eye, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, 
+  Search, Filter, Plus, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, 
   User, Clock, Copy, CheckSquare, Square,
-  ChevronDown, ChevronRight, Download, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle
+  ChevronDown, Download, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
@@ -657,15 +657,18 @@ const TransfersEnhanced = () => {
     const hasReturnIssues = isReturnFlightMissing || isReturnDepartureMissing
 
     return (
-      <div className={`group bg-card rounded-xl border border-border overflow-hidden transition-all hover:border-muted-foreground/30 ${
-        isSelected ? 'ring-2 ring-primary ring-offset-2 border-primary/50' : ''
-      }`}>
+      <div 
+        onClick={() => { setSelectedTransfer(transfer); setShowDetailsModal(true) }}
+        className={`group bg-card rounded-xl border border-border overflow-hidden transition-all hover:border-muted-foreground/30 cursor-pointer ${
+          isSelected ? 'ring-2 ring-primary ring-offset-2 border-primary/50' : ''
+        }`}
+      >
         {/* Card header */}
         <div className="px-4 sm:px-5 py-3.5 flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0 flex-1">
             {canManageTransfers && (
               <button
-                onClick={() => handleTransferSelect(transfer._id, !isSelected)}
+                onClick={(e) => { e.stopPropagation(); handleTransferSelect(transfer._id, !isSelected) }}
                 className={`flex-shrink-0 mt-0.5 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
               >
                 {isSelected ? (
@@ -713,7 +716,7 @@ const TransfersEnhanced = () => {
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm pl-4">
               <span className="text-foreground">
-                {transfer.transfer_details?.pickup_location || '—'} → {transfer.transfer_details?.drop_location || '—'}
+                {transfer.transfer_details?.pickup_location || '—'} → {transfer.transfer_details?.drop_location === 'TBD' || !transfer.transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.transfer_details?.drop_location || '—')}
               </span>
               <span className="text-muted-foreground">
                 {new Date(transfer.transfer_details?.estimated_pickup_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -735,7 +738,7 @@ const TransfersEnhanced = () => {
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm pl-4">
                 <span className="text-foreground">
-                  {transfer.return_transfer_details?.pickup_location || '—'} → {transfer.return_transfer_details?.drop_location || '—'}
+                  {transfer.return_transfer_details?.pickup_location || '—'} → {transfer.return_transfer_details?.drop_location === 'TBD' || !transfer.return_transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.return_transfer_details?.drop_location || '—')}
                 </span>
                 <span className="text-muted-foreground">
                   {transfer.return_transfer_details?.estimated_pickup_time
@@ -804,16 +807,9 @@ const TransfersEnhanced = () => {
               </div>
             )}
             <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => { setSelectedTransfer(transfer); setShowDetailsModal(true) }}
-                className="p-2 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                title="View / Edit"
-              >
-                <Eye size={16} />
-              </button>
               {canManageTransfers && (
                 <button
-                  onClick={() => handleDeleteClick(transfer)}
+                  onClick={(e) => { e.stopPropagation(); handleDeleteClick(transfer) }}
                   className="p-2 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                   title="Delete"
                 >
@@ -923,9 +919,12 @@ const TransfersEnhanced = () => {
                       
                       {/* Timeline content */}
                       <div className="flex-1 min-w-0">
-                        <div className={`bg-card rounded-lg border border-border p-4 shadow-sm transition-all ${
-                          selectedTransfers.includes(transfer._id) ? 'ring-2 ring-primary ring-offset-2' : ''
-                        }`}>
+                        <div 
+                          onClick={() => { setSelectedTransfer(transfer); setShowDetailsModal(true) }}
+                          className={`bg-card rounded-lg border border-border p-4 shadow-sm transition-all cursor-pointer hover:border-muted-foreground/30 ${
+                            selectedTransfers.includes(transfer._id) ? 'ring-2 ring-primary ring-offset-2' : ''
+                          }`}
+                        >
                           {/* Header */}
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-3">
@@ -961,7 +960,7 @@ const TransfersEnhanced = () => {
                             <div className="flex items-center gap-2">
                               {canManageTransfers && (
                                 <button
-                                  onClick={() => handleTransferSelect(transfer._id, !selectedTransfers.includes(transfer._id))}
+                                  onClick={(e) => { e.stopPropagation(); handleTransferSelect(transfer._id, !selectedTransfers.includes(transfer._id)) }}
                                   className="flex-shrink-0"
                                 >
                                   {selectedTransfers.includes(transfer._id) ? (
@@ -972,16 +971,6 @@ const TransfersEnhanced = () => {
                                 </button>
                               )}
                               
-                              <button
-                                onClick={() => {
-                                  setSelectedTransfer(transfer)
-                                  setShowDetailsModal(true)
-                                }}
-                                className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                title="View details"
-                              >
-                                <Eye size={14} />
-                              </button>
                               {canManageTransfers && (
                                 <>
                                   <button
@@ -1026,7 +1015,7 @@ const TransfersEnhanced = () => {
                               <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
                                 <MapPin size={14} className="text-muted-foreground" />
                                 <span className="truncate">
-                                  {transfer.transfer_details?.pickup_location} → {transfer.transfer_details?.drop_location}
+                                  {transfer.transfer_details?.pickup_location} → {transfer.transfer_details?.drop_location === 'TBD' || !transfer.transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.transfer_details?.drop_location || '—')}
                                 </span>
                               </div>
                               {hasOnwardFlight ? (
@@ -1067,7 +1056,7 @@ const TransfersEnhanced = () => {
                                 <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
                                   <MapPin size={14} className="text-muted-foreground" />
                                   <span className="truncate">
-                                    {transfer.return_transfer_details?.pickup_location || 'TBD'} → {transfer.return_transfer_details?.drop_location || 'TBD'}
+                                    {transfer.return_transfer_details?.pickup_location || 'TBD'} → {transfer.return_transfer_details?.drop_location === 'TBD' || !transfer.return_transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.return_transfer_details?.drop_location || 'TBD')}
                                   </span>
                                 </div>
                                 {hasReturnFlight ? (

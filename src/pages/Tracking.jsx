@@ -325,9 +325,6 @@ const Tracking = () => {
           <p className="text-gray-500 dark:text-gray-400 text-base">
             Track your transfer using your Apex ID or name
           </p>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-            No login required - just enter your Apex ID (e.g., APX123456) or your name below
-          </p>
         </div>
 
       {/* Search Section */}
@@ -475,7 +472,7 @@ const Tracking = () => {
                         </div>
                         <div className="min-w-0">
                           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Drop-off</div>
-                          <p className="text-base font-medium text-foreground">{transfer.transfer_details?.drop_location || '—'}</p>
+                          <p className="text-base font-medium text-foreground">{transfer.transfer_details?.drop_location === 'TBD' || !transfer.transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.transfer_details?.drop_location || '—')}</p>
                         </div>
                       </div>
                       {(transfer.transfer_details?.event_place && transfer.transfer_details.event_place !== 'Event (TBD)') && (
@@ -514,7 +511,7 @@ const Tracking = () => {
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Drop-off</div>
-                            <p className="text-base font-medium text-foreground">{transfer.return_transfer_details?.drop_location || '—'}</p>
+                            <p className="text-base font-medium text-foreground">{transfer.return_transfer_details?.drop_location === 'TBD' || !transfer.return_transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.return_transfer_details?.drop_location || '—')}</p>
                           </div>
                         </div>
                         {transfer.return_transfer_details?.estimated_pickup_time && (

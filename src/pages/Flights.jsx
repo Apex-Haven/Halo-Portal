@@ -396,10 +396,7 @@ const Flights = () => {
               {/* Global Flight Search Tab (FlightStats) */}
               <div className="mb-6">
                 <p className="text-muted-foreground mb-4">
-                  Search any flight worldwide by flight number and date. Data from FlightStats (no API key required).
-                </p>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Note: FlightStats provides data for flights within approximately 3 days of today. Flights outside this window may not be found.
+                  Search any flight worldwide by flight number and date.
                 </p>
                 <div className="flex flex-wrap gap-3 items-end">
                   <div className="flex-1 min-w-[200px]">
