@@ -12,7 +12,8 @@ const Drawer = ({
   position = 'right', // 'right' | 'left' | 'top' | 'bottom'
   size = 'md', // 'sm' | 'md' | 'lg' | 'xl' | 'full'
   showCloseButton = true,
-  closeOnBackdropClick = true
+  closeOnBackdropClick = true,
+  zIndex = 1000 // Higher value stacks above other drawers (e.g. 1100)
 }) => {
   // Prevent body scroll when drawer is open
   useEffect(() => {
@@ -92,7 +93,8 @@ const Drawer = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className={`fixed bg-black/50 z-[1000] inset-0`}
+            className={`fixed bg-black/50 inset-0`}
+            style={{ zIndex }}
             onClick={closeOnBackdropClick ? onClose : undefined}
           />
 
@@ -102,12 +104,13 @@ const Drawer = ({
             animate={pos.animation.animate}
             exit={pos.animation.exit}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className={`fixed ${pos.container} ${sizeClasses[size]} w-full bg-card shadow-2xl z-[1001] flex flex-col ${
+            className={`fixed ${pos.container} ${sizeClasses[size]} w-full bg-card shadow-2xl flex flex-col ${
               position === 'right' ? 'border-l border-border' :
               position === 'left' ? 'border-r border-border' :
               position === 'top' ? 'border-b border-border' :
               'border-t border-border'
             }`}
+            style={{ zIndex: zIndex + 1 }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -115,12 +118,12 @@ const Drawer = ({
               <div className="flex items-center justify-between p-6 border-b border-border flex-shrink-0">
                 <div className="flex-1">
                   {title && (
-                    <h2 className="text-2xl font-bold theme-text-heading m-0">
+                    <h2 className="text-2xl font-bold text-foreground m-0">
                       {title}
                     </h2>
                   )}
                   {subtitle && (
-                    <p className="text-sm theme-text-muted mt-1 m-0">
+                    <p className="text-xs text-foreground/70 dark:text-foreground/60 mt-1.5 m-0">
                       {subtitle}
                     </p>
                   )}

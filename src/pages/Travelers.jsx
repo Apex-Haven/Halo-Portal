@@ -576,7 +576,7 @@ const Travelers = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={handleExportToExcel}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 dark:bg-green-700 text-white rounded-lg hover:bg-green-700 dark:hover:bg-green-800 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800 rounded-lg hover:bg-green-100 dark:hover:bg-green-950/60 transition-colors"
               title="Export travelers to Excel"
             >
               <Download size={20} />

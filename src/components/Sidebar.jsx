@@ -96,7 +96,10 @@ const Sidebar = ({ onClose, isMobile, isCollapsed, onToggleCollapse }) => {
     if (!user) {
       return item.href === '/tracking'
     }
-    if (item.featureKey && !isFeatureEnabled(item.featureKey)) {
+    // Flights: always visible for CLIENT and ADMIN roles (enabled by default)
+    const isFlightsForClientOrAdmin = item.featureKey === FEATURE_KEYS.FLIGHTS &&
+      ['SUPER_ADMIN', 'ADMIN', 'CLIENT'].includes(user?.role)
+    if (item.featureKey && !isFlightsForClientOrAdmin && !isFeatureEnabled(item.featureKey)) {
       return false
     }
     if (user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') {
@@ -145,8 +148,8 @@ const Sidebar = ({ onClose, isMobile, isCollapsed, onToggleCollapse }) => {
       {!isCollapsed && (
         <div className="p-4 border-t border-border bg-muted/30">
           <div className="text-[11px] text-muted-foreground text-center font-medium">
-            <p className="m-0">HALO v1.0.0</p>
-            <p className="mt-1 m-0">© 2025 Apex</p>
+            <p className="m-0">HALO v2.0.0</p>
+            <p className="mt-1 m-0">© 2026 Apex</p>
           </div>
         </div>
       )}

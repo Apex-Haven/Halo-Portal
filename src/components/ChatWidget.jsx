@@ -8,13 +8,13 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007
 const INITIAL_MESSAGES = [
   {
     role: 'bot',
-    content: 'Hi! I\'m HALO AI. I can help you check your transfer status. Type your Apex ID (e.g. APX123456) or your name. Say **help** for more options.',
+    content: 'Hi! I\'m HALO AI. I can help you check your transfer status. Try **company + traveler**, your Apex ID, or your name. Say **help** for more options.',
     timestamp: new Date(),
   },
 ]
 
 const SUGGESTION_CHIPS = [
-  'Status of APX123456',
+  'Status for Company, Traveler',
   'Help',
   'Track transfer for John',
 ]
@@ -528,7 +528,7 @@ const ChatWidget = () => {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                      placeholder="Ask about your transfer..."
+                      placeholder="Company + traveler, Apex ID, or name..."
                       className="flex-1 px-4 py-2.5 bg-background border border-input rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring text-sm"
                       disabled={loading}
                     />

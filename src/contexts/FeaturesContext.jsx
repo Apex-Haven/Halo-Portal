@@ -9,7 +9,7 @@ export const FEATURE_KEYS = {
 
 const DEFAULT_FEATURES = {
   [FEATURE_KEYS.HOTELS_ADVISORY]: false,
-  [FEATURE_KEYS.FLIGHTS]: false
+  [FEATURE_KEYS.FLIGHTS]: true  // Enabled by default for client and admin roles
 }
 
 export const FEATURE_LABELS = {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, Plus, Eye, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, UserPlus, FileEdit, AlertCircle, User, Clock, Copy } from 'lucide-react'
+import { Filter, Plus, Eye, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, UserPlus, FileEdit, AlertCircle, User, Clock, Copy } from 'lucide-react'
 import TransferForm from '../components/TransferForm'
 import TransferDetailsModal from '../components/TransferDetailsModal'
 import TransferEditModal from '../components/TransferEditModal'
@@ -11,13 +11,16 @@ import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { getTransferDisplayName, getClientAndTravelerNames } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, getTransferStatusDisplay, formatDateTimeFriendly } from '../utils/transferUtils'
+import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 
 const Transfers = () => {
   const { user, isRole } = useAuth()
   const [transfers, setTransfers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [companyFilter, setCompanyFilter] = useState('')
+  const [travelerFilter, setTravelerFilter] = useState('')
+  const [sortBy, setSortBy] = useState('company') // 'company' | 'latest'
   const [statusFilter, setStatusFilter] = useState('all')
   const [vendorFilter, setVendorFilter] = useState('all')
   const [airportFilter, setAirportFilter] = useState('all')
@@ -50,6 +53,10 @@ const Transfers = () => {
   useEffect(() => {
     fetchTransfers()
   }, [])
+
+  useEffect(() => {
+    if (!companyFilter) setTravelerFilter('')
+  }, [companyFilter])
 
   
   // Check for transfer ID in URL (id or transferId) and open the right modal (view / assign vendor / assign driver)
@@ -271,56 +278,37 @@ const Transfers = () => {
     }
   }
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed': return '#059669'
-      case 'in_progress': return '#2563eb'
-      case 'assigned': return '#d97706'
-      case 'pending': return '#6b7280'
-      case 'cancelled': return '#dc2626'
-      default: return '#6b7280'
-    }
+  const statusColors = {
+    pending: 'bg-gray-100 dark:bg-gray-700/80 text-gray-800 dark:text-gray-200',
+    assigned: 'bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200',
+    in_progress: 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200',
+    completed: 'bg-green-100 dark:bg-green-900/60 text-green-800 dark:text-green-200',
+    cancelled: 'bg-red-100 dark:bg-red-900/60 text-red-800 dark:text-red-200'
   }
 
-  const getStatusBg = (status) => {
-    switch (status) {
-      case 'completed': return 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800'
-      case 'in_progress': return 'bg-blue-50 dark:bg-blue-950 border-blue-300 dark:border-blue-700'
-      case 'assigned': return 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800'
-      case 'pending': return 'bg-muted border-border'
-      case 'cancelled': return 'bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800'
-      default: return 'bg-muted border-border'
-    }
-  }
-
-  const getStatusTextColor = (status) => {
-    switch (status) {
-      case 'completed': return 'text-green-600 dark:text-green-500'
-      case 'in_progress': return 'text-blue-600 dark:text-blue-400'
-      case 'assigned': return 'text-yellow-600 dark:text-yellow-500'
-      case 'pending': return 'text-muted-foreground'
-      case 'cancelled': return 'text-red-600 dark:text-red-500'
-      default: return 'text-muted-foreground'
-    }
+  const getStatusColor = (statusKey) => {
+    const normalized = normalizeStatus(statusKey)
+    return statusColors[normalized] || statusColors.pending
   }
 
   const filteredTransfers = transfers.filter(transfer => {
-    // Search filter
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase()
-      const matchesSearch = 
-        (transfer.customer_details?.name || '').toLowerCase().includes(search) ||
-        (transfer._id || '').toLowerCase().includes(search) ||
-        (transfer.flight_details?.flight_no || '').toLowerCase().includes(search) ||
-        (transfer.vendor_details?.vendor_name || '').toLowerCase().includes(search) ||
-        (transfer.vendor_details?.vendor_id || '').toLowerCase().includes(search)
-      if (!matchesSearch) return false
+    // Company + Traveler filter
+    if (companyFilter) {
+      const companyMatch = (c) => (c || '').toLowerCase() === companyFilter.toLowerCase()
+      const tCompany = transfer.customer_details?.company_name || transfer.traveler_details?.company_name
+      if (!companyMatch(tCompany)) return false
+    }
+    if (travelerFilter) {
+      const travelerMatch = (n) => (n || '').toLowerCase() === travelerFilter.toLowerCase()
+      const tTraveler = transfer.traveler_details?.name || transfer.customer_details?.name
+      if (!travelerMatch(tTraveler)) return false
     }
 
-    // Status filter
+    // Status filter (use statusKey from getTransferStatusDisplay for consistency)
     if (statusFilter !== 'all') {
-      const status = transfer.transfer_details?.transfer_status || transfer.transfer_details?.status
-      if (status !== statusFilter) return false
+      const { statusKey } = getTransferStatusDisplay(transfer)
+      const normalizedKey = normalizeStatus(statusKey)
+      if (normalizedKey !== statusFilter) return false
     }
 
     // Vendor filter
@@ -362,6 +350,16 @@ const Transfers = () => {
     return true
   })
 
+  // Sort: by company or latest
+  const sortedTransfers = [...filteredTransfers].sort((a, b) => {
+    if (sortBy === 'company') {
+      const companyA = (a.customer_details?.company_name || a.traveler_details?.company_name || a.customer_details?.name || '').toLowerCase()
+      const companyB = (b.customer_details?.company_name || b.traveler_details?.company_name || b.customer_details?.name || '').toLowerCase()
+      return companyA.localeCompare(companyB)
+    }
+    return new Date(b.createdAt || b.create_time || 0) - new Date(a.createdAt || a.create_time || 0)
+  })
+
   // Get unique vendors and airports for filters
   const uniqueVendors = [...new Set(
     transfers
@@ -383,6 +381,30 @@ const Transfers = () => {
       .filter(Boolean)
   )].sort()
 
+  const uniqueCompanies = [...new Set(
+    transfers
+      .flatMap(t => [
+        t.customer_details?.company_name,
+        t.traveler_details?.company_name
+      ])
+      .filter(Boolean)
+  )].sort((a, b) => (a || '').localeCompare(b || ''))
+
+  const travelersForCompany = companyFilter
+    ? [...new Set(
+        transfers
+          .filter(t => {
+            const c = t.customer_details?.company_name || t.traveler_details?.company_name
+            return (c || '').toLowerCase() === companyFilter.toLowerCase()
+          })
+          .flatMap(t => [
+            t.traveler_details?.name,
+            t.customer_details?.name
+          ])
+          .filter(Boolean)
+      )].sort((a, b) => (a || '').localeCompare(b || ''))
+    : []
+
   return (
     <div className="max-w-[1200px] mx-auto">
       {/* Header */}
@@ -397,18 +419,42 @@ const Transfers = () => {
 
       {/* Controls */}
       <div className="bg-card p-6 rounded-xl shadow-sm border border-border mb-6">
-        <div className="flex gap-4 items-center flex-wrap">
-          <div className="relative flex-1 min-w-[300px]">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search transfers..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-3 py-3 border border-input rounded-lg text-sm outline-none bg-background text-foreground focus:ring-2 focus:ring-ring"
+        <div className="flex gap-4 items-end flex-wrap w-full">
+          <div className="flex-1 min-w-[180px] sm:min-w-[200px]">
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Company</label>
+            <Dropdown
+              value={companyFilter}
+              onChange={(e) => setCompanyFilter(e.target.value)}
+              options={[
+                { value: '', label: 'All companies' },
+                ...uniqueCompanies.map(c => ({ value: c, label: c }))
+              ]}
+              placeholder="Select company"
+              minWidth="100%"
             />
           </div>
-          
+          <div className="flex-1 min-w-[180px] sm:min-w-[200px]">
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Traveler</label>
+            <Dropdown
+              value={travelerFilter}
+              onChange={(e) => setTravelerFilter(e.target.value)}
+              options={[
+                { value: '', label: !companyFilter ? 'Select company first' : 'All travelers' },
+                ...travelersForCompany.map(t => ({ value: t, label: t }))
+              ]}
+              placeholder={!companyFilter ? 'Select company first' : 'Select traveler'}
+              minWidth="100%"
+            />
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="px-4 py-3 border border-input rounded-lg text-sm bg-background text-foreground focus:ring-2 focus:ring-ring"
+          >
+            <option value="company">Sort: Company</option>
+            <option value="latest">Sort: Latest</option>
+          </select>
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium cursor-pointer transition-colors border ${
@@ -430,6 +476,7 @@ const Transfers = () => {
             Add Transfer
           </button>
           )}
+          </div>
         </div>
 
         {/* Filters Panel */}
@@ -442,12 +489,7 @@ const Transfers = () => {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 options={[
                   { value: 'all', label: 'All Status' },
-                  { value: 'pending', label: 'Pending' },
-                  { value: 'assigned', label: 'Assigned' },
-                  { value: 'in_progress', label: 'In Progress' },
-                  { value: 'enroute', label: 'Enroute' },
-                  { value: 'completed', label: 'Completed' },
-                  { value: 'cancelled', label: 'Cancelled' }
+                  ...STATUS_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))
                 ]}
               />
             </div>
@@ -497,13 +539,15 @@ const Transfers = () => {
               />
             </div>
 
-            {(statusFilter !== 'all' || vendorFilter !== 'all' || airportFilter !== 'all' || dateFilter !== 'all') && (
+            {(statusFilter !== 'all' || vendorFilter !== 'all' || airportFilter !== 'all' || dateFilter !== 'all' || companyFilter || travelerFilter) && (
               <button
                 onClick={() => {
                   setStatusFilter('all')
                   setVendorFilter('all')
                   setAirportFilter('all')
                   setDateFilter('all')
+                  setCompanyFilter('')
+                  setTravelerFilter('')
                 }}
                 className="flex items-center gap-1 px-3 py-2 bg-transparent border border-input rounded-md text-sm text-muted-foreground cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
               >
@@ -521,10 +565,10 @@ const Transfers = () => {
           <div className="bg-card rounded-xl shadow-sm border border-border p-12 text-center">
             <div className="text-base text-muted-foreground">Loading transfers...</div>
           </div>
-        ) : filteredTransfers.length > 0 ? (
-          filteredTransfers.map((transfer) => {
-            const { clientName, travelerName } = getClientAndTravelerNames(transfer)
-            const status = transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'pending'
+        ) : sortedTransfers.length > 0 ? (
+          sortedTransfers.map((transfer) => {
+            const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
+            const { label: statusLabel, statusKey } = getTransferStatusDisplay(transfer)
             const hasRealFlight =
               transfer.flight_details?.flight_no &&
               transfer.flight_details.flight_no !== 'XX000' &&
@@ -533,10 +577,12 @@ const Transfers = () => {
             return (
               <div
                 key={transfer._id}
-                className="bg-card rounded-xl shadow-sm border border-border overflow-hidden"
+                className="relative rounded-xl border border-border overflow-hidden bg-gradient-to-br from-card via-card to-muted/20 dark:to-muted/30 shadow-sm hover:shadow-md transition-shadow"
               >
+                {/* Subtle gradient accent */}
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary/50 via-primary/20 to-transparent dark:from-primary/40 dark:via-primary/15 dark:to-transparent" aria-hidden />
                 {/* Card header */}
-                <div className="px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 border-b border-border bg-muted/40">
+                <div className="relative px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 border-b border-border bg-muted/30 dark:bg-muted/20">
                   <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span
@@ -564,11 +610,11 @@ const Transfers = () => {
                     <div className="hidden sm:block h-4 w-px bg-border" />
                     <div className="min-w-0">
                       <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                        {clientName || 'Customer'}
+                        {companyName || clientName || 'Customer'}
                       </div>
                       {travelerName && (
                         <div className="text-xs text-foreground font-medium truncate">
-                          Traveler: {travelerName}
+                          {travelerName}
                         </div>
                       )}
                     </div>
@@ -580,28 +626,26 @@ const Transfers = () => {
                       </span>
                     )}
                     <span
-                      className={`${getStatusBg(status)} ${getStatusTextColor(
-                        status
-                      )} px-2 py-1 rounded-full text-[11px] font-semibold capitalize border`}
+                      className={`px-2 py-1 rounded-md text-xs font-medium ${getStatusColor(statusKey)}`}
                     >
-                      {status}
+                      {statusLabel}
                     </span>
                   </div>
                 </div>
 
                 {/* Card body */}
-                <div className="px-4 sm:px-6 py-4 grid gap-4 md:grid-cols-4">
-                  {/* Customer / traveler */}
+                <div className="relative px-4 sm:px-6 py-4 grid gap-4 md:grid-cols-4">
+                  {/* Company / Traveler */}
                   <div className="space-y-1">
                     <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      Customer / Traveler
+                      Company / Traveler
                     </div>
                     <div className="text-sm font-medium text-foreground truncate">
-                      {clientName || 'N/A'}
+                      {companyName || clientName || 'N/A'}
                     </div>
                     {travelerName ? (
                       <div className="text-xs text-muted-foreground truncate">
-                        Traveler: {travelerName}
+                        {travelerName}
                       </div>
                     ) : (
                       <div className="text-xs text-muted-foreground italic">No traveler</div>
@@ -815,17 +859,7 @@ const Transfers = () => {
                                   <span>Pickup</span>
                                 </div>
                                 <div className="text-muted-foreground mt-0.5">
-                                  {new Date(
-                                    transfer.transfer_details.estimated_pickup_time
-                                  ).toLocaleDateString()}
-                                </div>
-                                <div className="text-[11px] text-muted-foreground">
-                                  {new Date(
-                                    transfer.transfer_details.estimated_pickup_time
-                                  ).toLocaleTimeString('en-US', {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
+                                  {formatDateTimeFriendly(transfer.transfer_details.estimated_pickup_time)}
                                 </div>
                               </div>
                             )}
@@ -836,17 +870,7 @@ const Transfers = () => {
                                   <span>Arrival</span>
                                 </div>
                                 <div className="text-muted-foreground mt-0.5">
-                                  {new Date(
-                                    transfer.flight_details.arrival_time
-                                  ).toLocaleDateString()}
-                                </div>
-                                <div className="text-[11px] text-muted-foreground">
-                                  {new Date(
-                                    transfer.flight_details.arrival_time
-                                  ).toLocaleTimeString('en-US', {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
+                                  {formatDateTimeFriendly(transfer.flight_details.arrival_time)}
                                 </div>
                               </div>
                             )}
@@ -858,7 +882,7 @@ const Transfers = () => {
                 </div>
 
                 {/* Card footer actions */}
-                <div className="px-4 sm:px-6 py-3 border-t border-border bg-muted/30 flex flex-wrap justify-end gap-1.5">
+                <div className="relative px-4 sm:px-6 py-3 border-t border-border bg-muted/20 dark:bg-muted/10 flex flex-wrap justify-end gap-1.5">
                   {!isClient && (
                     <button
                       onClick={() => handleViewTransfer(transfer)}

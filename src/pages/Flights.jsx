@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Search, Plane, MapPin, AlertCircle, User, Filter } from 'lucide-react'
+import { Search, Plane, MapPin, AlertCircle, User, Filter, Building2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { getTransferDisplayName, getClientAndTravelerNames } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, formatDateTimeFriendly } from '../utils/transferUtils'
 
 const Flights = () => {
   const navigate = useNavigate()
@@ -15,6 +15,7 @@ const Flights = () => {
   const [allFlights, setAllFlights] = useState([])
   const [loadingFlights, setLoadingFlights] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [sortBy, setSortBy] = useState('company') // 'company' | 'latest'
 
   // Global Flight Search Tab State (FlightStats)
   const [globalFlightNumber, setGlobalFlightNumber] = useState('')
@@ -85,7 +86,7 @@ const Flights = () => {
         const flights = data.data
           .filter(transfer => transfer.flight_details?.flight_no)
           .map(transfer => {
-            const { clientName, travelerName } = getClientAndTravelerNames(transfer)
+            const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
             return {
               id: transfer._id,
               transferId: transfer._id,
@@ -98,6 +99,7 @@ const Flights = () => {
               status: transfer.flight_details.flight_status || 'scheduled',
               terminal: transfer.flight_details.terminal,
               delay_minutes: transfer.flight_details.delay_minutes || 0,
+              companyName,
               clientName,
               travelerName,
               customerName: getTransferDisplayName(transfer),
@@ -192,6 +194,7 @@ const Flights = () => {
         return flight.flightNumber?.toLowerCase().includes(search) || flight.airline?.toLowerCase().includes(search)
       case 'customer':
         return (
+          flight.companyName?.toLowerCase().includes(search) ||
           flight.clientName?.toLowerCase().includes(search) ||
           flight.travelerName?.toLowerCase().includes(search) ||
           flight.customerName?.toLowerCase().includes(search)
@@ -201,17 +204,32 @@ const Flights = () => {
           flight.departure?.toLowerCase().includes(search) ||
           flight.arrival?.toLowerCase().includes(search)
         )
+      case 'company':
+        return flight.companyName?.toLowerCase().includes(search) || flight.clientName?.toLowerCase().includes(search)
       default:
         return (
           flight.flightNumber?.toLowerCase().includes(search) ||
           flight.airline?.toLowerCase().includes(search) ||
           flight.departure?.toLowerCase().includes(search) ||
           flight.arrival?.toLowerCase().includes(search) ||
+          flight.companyName?.toLowerCase().includes(search) ||
           flight.clientName?.toLowerCase().includes(search) ||
           flight.travelerName?.toLowerCase().includes(search) ||
           flight.customerName?.toLowerCase().includes(search)
         )
     }
+  })
+
+  // Sort: by company or latest
+  const sortedFlights = [...filteredFlights].sort((a, b) => {
+    if (sortBy === 'company') {
+      const companyA = (a.companyName || a.clientName || '').toLowerCase()
+      const companyB = (b.companyName || b.clientName || '').toLowerCase()
+      return companyA.localeCompare(companyB)
+    }
+    const dateA = new Date(a.scheduled_time || 0)
+    const dateB = new Date(b.scheduled_time || 0)
+    return dateB - dateA
   })
 
   return (
@@ -264,6 +282,17 @@ const Flights = () => {
               <div className="mb-6">
                 <div className="flex gap-2 mb-4 flex-wrap">
                   <button
+                    onClick={() => setSearchType('company')}
+                    className={`px-4 py-2 rounded-md text-sm font-medium cursor-pointer flex items-center gap-1.5 transition-all ${
+                      searchType === 'company'
+                        ? 'bg-blue-600 dark:bg-blue-500 text-white'
+                        : 'bg-transparent dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <Building2 size={16} />
+                    Company
+                  </button>
+                  <button
                     onClick={() => setSearchType('flight')}
                     className={`px-4 py-2 rounded-md text-sm font-medium cursor-pointer flex items-center gap-1.5 transition-all ${
                       searchType === 'flight'
@@ -297,8 +326,9 @@ const Flights = () => {
                     Airport Code
                   </button>
                 </div>
-                <div className="relative flex-1">
-                  <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <div className="flex items-center gap-2 flex-1">
+                  <div className="relative flex-1">
+                    <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="text"
                     placeholder={
@@ -306,12 +336,15 @@ const Flights = () => {
                         ? 'Filter by flight number or airline...'
                         : searchType === 'customer'
                         ? 'Filter by customer or traveler name...'
+                        : searchType === 'company'
+                        ? 'Filter by company name...'
                         : 'Filter by airport code (e.g. BOM, DEL)...'
                     }
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full py-3 pl-10 pr-3 border border-input rounded-lg text-sm outline-none bg-background text-foreground focus:ring-2 focus:ring-ring"
                   />
+                  </div>
                 </div>
               </div>
 
@@ -321,7 +354,7 @@ const Flights = () => {
                   <div className="p-12 text-center">
                     <div className="text-base text-muted-foreground">Loading flights...</div>
                   </div>
-                ) : filteredFlights.length > 0 ? (
+                ) : sortedFlights.length > 0 ? (
                   <div>
                     <div className="grid grid-cols-8 gap-4 px-6 py-4 bg-muted/30 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       <div>Flight</div>
@@ -333,7 +366,7 @@ const Flights = () => {
                       <div>Actual</div>
                       <div>Delay</div>
                     </div>
-                    {filteredFlights.map((flight) => (
+                    {sortedFlights.map((flight) => (
                       <div
                         key={flight.id}
                         onClick={() => navigate(`/transfers?id=${flight.transferId}`)}
@@ -350,9 +383,9 @@ const Flights = () => {
                           )}
                         </div>
                         <div className="text-foreground">
-                          <div className="font-medium">{flight.clientName}</div>
-                          {flight.travelerName ? (
-                            <div className="text-xs text-muted-foreground mt-0.5">{flight.travelerName}</div>
+                          <div className="font-medium">{flight.companyName || flight.clientName}</div>
+                          {(flight.travelerName || (flight.clientName && flight.clientName !== 'N/A')) ? (
+                            <div className="text-xs text-muted-foreground mt-0.5">{flight.travelerName || flight.clientName}</div>
                           ) : (
                             <div className="text-xs text-muted-foreground/60 mt-0.5 italic">No traveler assigned</div>
                           )}
@@ -363,10 +396,10 @@ const Flights = () => {
                           </span>
                         </div>
                         <div className="text-foreground">
-                          {flight.scheduled_time ? new Date(flight.scheduled_time).toLocaleString() : 'N/A'}
+                          {formatDateTimeFriendly(flight.scheduled_time) || 'N/A'}
                         </div>
                         <div className={flight.actual_time ? 'text-foreground' : 'text-muted-foreground'}>
-                          {flight.actual_time ? new Date(flight.actual_time).toLocaleString() : 'N/A'}
+                          {formatDateTimeFriendly(flight.actual_time) || 'N/A'}
                         </div>
                         <div className={`font-medium ${
                           flight.delay_minutes > 0 ? 'text-warning-600 dark:text-warning-500' :
@@ -476,7 +509,7 @@ const Flights = () => {
                         <div className="text-sm text-muted-foreground">{globalFlightData.departureAirportName}</div>
                         <div className="text-sm">{globalFlightData.departureCity}</div>
                         <div className="text-sm font-medium mt-2">
-                          {globalFlightData.departureTime ? new Date(globalFlightData.departureTime).toLocaleString() : 'N/A'}
+                          {formatDateTimeFriendly(globalFlightData.departureTime) || 'N/A'}
                         </div>
                       </div>
                       <div className="flex items-center justify-center">
@@ -492,7 +525,7 @@ const Flights = () => {
                         <div className="text-sm text-muted-foreground">{globalFlightData.arrivalAirportName}</div>
                         <div className="text-sm">{globalFlightData.arrivalCity}</div>
                         <div className="text-sm font-medium mt-2">
-                          {globalFlightData.arrivalTime ? new Date(globalFlightData.arrivalTime).toLocaleString() : 'N/A'}
+                          {formatDateTimeFriendly(globalFlightData.arrivalTime) || 'N/A'}
                         </div>
                       </div>
                     </div>

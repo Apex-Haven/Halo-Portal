@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react'
 import { 
-  Search, Filter, Plus, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, 
+  Filter, Plus, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, 
   User, Clock, Copy, CheckSquare, Square,
-  ChevronDown, Download, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle
+  ChevronDown, ChevronRight, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle, RotateCcw
 } from 'lucide-react'
+import DatePicker from 'react-datepicker'
+import { startOfDay } from 'date-fns'
+import 'react-datepicker/dist/react-datepicker.css'
 import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { getClientAndTravelerNames } from '../utils/transferUtils'
+import { getClientAndTravelerNames, getTransferStatusDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatDateFriendly } from '../utils/transferUtils'
 import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 import Dropdown from '../components/Dropdown'
 import Drawer from '../components/Drawer'
@@ -19,9 +22,11 @@ const TransfersEnhanced = () => {
   const { isDark } = useTheme()
   const [transfers, setTransfers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [companyFilter, setCompanyFilter] = useState('')
+  const [travelerFilter, setTravelerFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [viewMode, setViewMode] = useState('cards')
+  const [sortBy, setSortBy] = useState('company') // 'company' | 'latest'
   
   // Bulk operations state
   const [selectedTransfers, setSelectedTransfers] = useState([])
@@ -30,7 +35,6 @@ const TransfersEnhanced = () => {
   // Modal states
   const [selectedTransfer, setSelectedTransfer] = useState(null)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [showBulkStatusModal, setShowBulkStatusModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [transferToDelete, setTransferToDelete] = useState(null)
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false)
@@ -44,6 +48,7 @@ const TransfersEnhanced = () => {
   const [transferSyncProgress, setTransferSyncProgress] = useState({ message: '', percentage: 0 })
   const [transferSyncCustomerId, setTransferSyncCustomerId] = useState('')
   const [showBulkVendorModal, setShowBulkVendorModal] = useState(false)
+  const [bulkVendorLeg, setBulkVendorLeg] = useState('onward')
   const [showBulkDriverModal, setShowBulkDriverModal] = useState(false)
   const [showBulkReturnDriverModal, setShowBulkReturnDriverModal] = useState(false)
   const [vendors, setVendors] = useState([])
@@ -60,8 +65,156 @@ const TransfersEnhanced = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [perPage] = useState(15)
   const [collapsedTimelineDates, setCollapsedTimelineDates] = useState(new Set())
+  const [showFlightDrawer, setShowFlightDrawer] = useState(false)
+  const [flightDrawerLeg, setFlightDrawerLeg] = useState('onward')
+  const [flightNumberInput, setFlightNumberInput] = useState('')
+  const [flightDateInput, setFlightDateInput] = useState('')
+  const [fetchedFlightData, setFetchedFlightData] = useState(null)
+  const [flightFetchLoading, setFlightFetchLoading] = useState(false)
+  const [flightFetchError, setFlightFetchError] = useState(null)
+  const [flightSaveLoading, setFlightSaveLoading] = useState(false)
   
   const navigate = useNavigate()
+
+  const getTodayLocal = () => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  const getDefaultFlightDate = (transfer, leg) => {
+    const today = getTodayLocal()
+    const src = leg === 'onward' ? transfer?.transfer_details?.estimated_pickup_time : transfer?.return_transfer_details?.estimated_pickup_time
+    if (src) {
+      const d = new Date(src)
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      if (dateStr < today) return today
+      return dateStr
+    }
+    return today
+  }
+
+  const openFlightDrawer = (leg, existing = null) => {
+    setFlightDrawerLeg(leg)
+    setFetchedFlightData(null)
+    setFlightFetchError(null)
+    if (existing?.flight_no) {
+      setFlightNumberInput(existing.flight_no)
+      const dep = existing.departure_time ? new Date(existing.departure_time) : null
+      let dateStr = dep ? `${dep.getFullYear()}-${String(dep.getMonth() + 1).padStart(2, '0')}-${String(dep.getDate()).padStart(2, '0')}` : getDefaultFlightDate(selectedTransfer, leg)
+      if (dateStr < getTodayLocal()) dateStr = getTodayLocal()
+      setFlightDateInput(dateStr)
+    } else {
+      setFlightNumberInput('')
+      setFlightDateInput(getDefaultFlightDate(selectedTransfer, leg))
+    }
+    setShowFlightDrawer(true)
+  }
+
+  const handleFetchFlight = async () => {
+    const fn = flightNumberInput?.trim()
+    if (!fn) {
+      toast.error('Please enter a flight number')
+      return
+    }
+    setFlightFetchLoading(true)
+    setFlightFetchError(null)
+    setFetchedFlightData(null)
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
+      const token = localStorage.getItem('token')
+      const date = flightDateInput || getTodayLocal()
+      const res = await axios.get(`${API_BASE_URL}/flights/global-search`, {
+        params: { flight: fn, date },
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.data?.success && res.data.data) {
+        setFetchedFlightData(res.data.data)
+        toast.success('Flight details retrieved')
+      } else {
+        const apiMsg = res.data?.message || 'Flight not found'
+        const friendlyMsg = apiMsg?.toLowerCase().includes('flight not found') ? 'Flight not found. Try a date closer to today.' : apiMsg
+        setFlightFetchError(friendlyMsg)
+      }
+    } catch (err) {
+      if (err.response?.status === 401) {
+        toast.error('Session expired. Please login again.')
+        localStorage.removeItem('token')
+        setShowFlightDrawer(false)
+        setTimeout(() => { window.location.href = '/' }, 1500)
+        return
+      }
+      const apiMsg = err.response?.data?.message || err.message || 'Failed to fetch flight'
+      const friendlyMsg = apiMsg?.toLowerCase().includes('flight not found') ? 'Flight not found. Try a date closer to today.' : (apiMsg || 'Failed to fetch flight')
+      setFlightFetchError(friendlyMsg)
+      toast.error(friendlyMsg)
+    } finally {
+      setFlightFetchLoading(false)
+    }
+  }
+
+  const handleSaveFlight = async () => {
+    if (!fetchedFlightData || !selectedTransfer?._id) return
+    const d = fetchedFlightData
+    const depTime = d.departureTime ? new Date(d.departureTime) : null
+    const arrTime = d.arrivalTime ? new Date(d.arrivalTime) : null
+    if (!depTime || !arrTime || isNaN(depTime.getTime()) || isNaN(arrTime.getTime())) {
+      toast.error('Flight data missing departure or arrival time')
+      return
+    }
+    setFlightSaveLoading(true)
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
+      const token = localStorage.getItem('token')
+      const flightPayload = {
+        flight_no: (d.flight || flightNumberInput).trim().toUpperCase(),
+        airline: (d.airlineName || d.airlineCode || '').trim() || 'N/A',
+        departure_airport: (d.departureAirport || '').trim() || 'N/A',
+        arrival_airport: (d.arrivalAirport || '').trim() || 'N/A',
+        departure_time: depTime.toISOString(),
+        arrival_time: arrTime.toISOString(),
+        scheduled_arrival: arrTime.toISOString(),
+        terminal: d.terminal?.trim() || undefined,
+        status: d.status || 'on_time',
+        delay_minutes: d.delayMinutes ?? 0
+      }
+      const payload = flightDrawerLeg === 'onward'
+        ? { flight_details: flightPayload }
+        : {
+            return_flight_details: flightPayload,
+            return_transfer_details: {
+              ...(selectedTransfer.return_transfer_details
+                ? (typeof selectedTransfer.return_transfer_details.toObject === 'function'
+                  ? selectedTransfer.return_transfer_details.toObject()
+                  : selectedTransfer.return_transfer_details)
+                : {}),
+              estimated_pickup_time: depTime.toISOString()
+            }
+          }
+      const res = await axios.put(`${API_BASE_URL}/transfers/${selectedTransfer._id}/flight-details`, payload, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      })
+      if (res.data?.success) {
+        toast.success(flightDrawerLeg === 'onward' ? 'Onward flight saved' : 'Return flight saved')
+        setSelectedTransfer(res.data.data)
+        setTransfers(prev => prev.map(t => t._id === selectedTransfer._id ? res.data.data : t))
+        setShowFlightDrawer(false)
+        fetchTransfers(false)
+      } else {
+        toast.error(res.data?.message || 'Failed to save flight')
+      }
+    } catch (err) {
+      if (err.response?.status === 401) {
+        toast.error('Session expired. Please login again.')
+        localStorage.removeItem('token')
+        setShowFlightDrawer(false)
+        setTimeout(() => { window.location.href = '/' }, 1500)
+        return
+      }
+      toast.error(err.response?.data?.message || err.message || 'Failed to save flight')
+    } finally {
+      setFlightSaveLoading(false)
+    }
+  }
 
   const toggleTimelineDate = (dateKey) => {
     setCollapsedTimelineDates(prev => {
@@ -74,6 +227,7 @@ const TransfersEnhanced = () => {
   
   // Check if user can manage transfers
   const canManageTransfers = isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')
+  const canAddUpdateFlight = canManageTransfers || isRole('CLIENT')
   const isVendor = isRole('VENDOR')
   const isClient = isRole('CLIENT')
 
@@ -82,8 +236,12 @@ const TransfersEnhanced = () => {
   }, [])
 
   useEffect(() => {
+    if (!companyFilter) setTravelerFilter('')
+  }, [companyFilter])
+
+  useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, statusFilter])
+  }, [companyFilter, travelerFilter, statusFilter, sortBy])
 
   useEffect(() => {
     if ((showBulkVendorModal || showBulkDriverModal || showBulkReturnDriverModal) && canManageTransfers) {
@@ -118,14 +276,15 @@ const TransfersEnhanced = () => {
     }
   }, [showBulkDriverModal, bulkVendorIdForDriver])
 
-  // When Assign Driver modal opens, pre-select vendor if all selected transfers have the same vendor
+  // When Assign Driver modal opens, pre-select vendor if all selected have the same
   useEffect(() => {
     if (showBulkDriverModal && selectedTransfers.length > 0) {
       const selectedObjs = transfers.filter(t => selectedTransfers.includes(t._id))
-      const withVendor = selectedObjs.filter(t => t.vendor_details?.vendor_id)
-      const withoutVendor = selectedObjs.filter(t => !t.vendor_details?.vendor_id)
+      const getVendorId = (t) => (t.vendor_details?.vendor_id || t.vendor_details?.vendorId || '').toString().trim()
+      const withVendor = selectedObjs.filter(t => getVendorId(t))
+      const withoutVendor = selectedObjs.filter(t => !getVendorId(t))
       if (withoutVendor.length === 0 && withVendor.length > 0) {
-        const vendorIds = [...new Set(withVendor.map(t => t.vendor_details.vendor_id))]
+        const vendorIds = [...new Set(withVendor.map(t => getVendorId(t)).filter(Boolean))]
         if (vendorIds.length === 1) {
           setBulkVendorIdForDriver(vendorIds[0])
         } else {
@@ -136,6 +295,21 @@ const TransfersEnhanced = () => {
       }
     }
   }, [showBulkDriverModal, selectedTransfers, transfers])
+
+  // When drivers load in Assign Driver modal, pre-select if all selected have the same driver
+  useEffect(() => {
+    if (showBulkDriverModal && !loadingDrivers && drivers.length > 0 && selectedTransfers.length > 0) {
+      const selectedObjs = transfers.filter(t => selectedTransfers.includes(t._id))
+      const getDriverId = (t) => (t.assigned_driver_details?.driver_id || t.assigned_driver_details?.driverId || '').toString().trim()
+      const withDriver = selectedObjs.filter(t => getDriverId(t))
+      if (withDriver.length === selectedObjs.length && withDriver.length > 0) {
+        const driverIds = [...new Set(withDriver.map(t => getDriverId(t)).filter(Boolean))]
+        if (driverIds.length === 1 && drivers.some(d => String(d._id || d.id).trim() === driverIds[0])) {
+          setBulkDriverId(driverIds[0])
+        }
+      }
+    }
+  }, [showBulkDriverModal, loadingDrivers, drivers, selectedTransfers, transfers])
 
   useEffect(() => {
     if (showBulkReturnDriverModal && bulkVendorIdForReturnDriver) {
@@ -168,6 +342,21 @@ const TransfersEnhanced = () => {
     }
   }, [showBulkReturnDriverModal, selectedTransfers, transfers])
 
+  // When drivers load in Assign Return Driver modal, pre-select if all eligible have the same return driver
+  useEffect(() => {
+    if (showBulkReturnDriverModal && !loadingDrivers && drivers.length > 0 && bulkVendorIdForReturnDriver) {
+      const eligible = transfers.filter(t => selectedTransfers.includes(t._id) && t.return_transfer_details && (t.transfer_details?.transfer_status || 'pending') === 'completed')
+      const getReturnDriverId = (t) => (t.return_assigned_driver_details?.driver_id || t.return_assigned_driver_details?.driverId || '').toString().trim()
+      const withDriver = eligible.filter(t => getReturnDriverId(t))
+      if (withDriver.length === eligible.length && withDriver.length > 0) {
+        const driverIds = [...new Set(withDriver.map(t => getReturnDriverId(t)).filter(Boolean))]
+        if (driverIds.length === 1 && drivers.some(d => String(d._id || d.id).trim() === driverIds[0])) {
+          setBulkReturnDriverId(driverIds[0])
+        }
+      }
+    }
+  }, [showBulkReturnDriverModal, loadingDrivers, drivers, bulkVendorIdForReturnDriver, selectedTransfers, transfers])
+
   useEffect(() => {
     if (showTransferSyncModal && (isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER'))) {
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
@@ -183,9 +372,9 @@ const TransfersEnhanced = () => {
     }
   }, [showTransferSyncModal])
 
-  const fetchTransfers = async () => {
+  const fetchTransfers = async (showLoading = true) => {
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
       const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
       const token = localStorage.getItem('token');
       
@@ -282,7 +471,7 @@ const TransfersEnhanced = () => {
 
       if (response.data.success) {
         toast.success('Status updated successfully')
-        fetchTransfers()
+        fetchTransfers(false)
       } else {
         toast.error(response.data.message || 'Failed to update status')
       }
@@ -314,7 +503,7 @@ const TransfersEnhanced = () => {
         toast.success(response.data.message)
         setSelectedTransfers([])
         setDeleteAllBulk(false)
-        fetchTransfers()
+        fetchTransfers(false)
       } else {
         toast.error(response.data.message || 'Failed to delete transfers')
       }
@@ -348,13 +537,35 @@ const TransfersEnhanced = () => {
         toast.success('Transfer deleted successfully')
         setShowDeleteConfirm(false)
         setTransferToDelete(null)
-        fetchTransfers()
+        fetchTransfers(false)
       } else {
         toast.error(response.data.message || 'Failed to delete transfer')
       }
     } catch (error) {
       console.error('Error deleting transfer:', error)
       toast.error('Failed to delete transfer')
+    } finally {
+      setBulkLoading(false)
+    }
+  }
+
+  // Bulk clear – reset vendor, driver, and status to fresh (pending)
+  const handleBulkClearStatus = async () => {
+    if (selectedTransfers.length === 0) return
+    setBulkLoading(true)
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
+      const token = localStorage.getItem('token')
+      const response = await axios.put(`${API_BASE_URL}/bulk-operations/clear`, { transferIds: selectedTransfers }, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
+      if (response.data.success) {
+        toast.success(response.data.message || `Cleared vendor, driver, and status for ${selectedTransfers.length} transfer${selectedTransfers.length === 1 ? '' : 's'}`)
+        fetchTransfers(false)
+      } else {
+        toast.error(response.data.message || 'Failed to clear')
+      }
+    } catch (error) {
+      console.error('Error clearing:', error)
+      toast.error(error.response?.data?.message || 'Failed to clear')
     } finally {
       setBulkLoading(false)
     }
@@ -381,10 +592,11 @@ const TransfersEnhanced = () => {
       });
 
       if (response.data.success) {
-        toast.success(response.data.message)
-        setSelectedTransfers([])
-        setShowBulkStatusModal(false)
-        fetchTransfers()
+        const count = response.data.updatedCount ?? selectedTransfers.length
+        const legLabel = leg === 'onward' ? 'Arrival' : 'Return'
+        const statusLabel = newStatus.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
+        toast.success(`${count} transfer${count === 1 ? '' : 's'}: ${legLabel} → ${statusLabel}`)
+        fetchTransfers(false)
       } else {
         toast.error(response.data.message || 'Failed to update status')
       }
@@ -404,9 +616,8 @@ const TransfersEnhanced = () => {
       const token = localStorage.getItem('token')
       await axios.put(`${API_BASE_URL}/bulk-operations/vendor`, { transferIds: selectedTransfers, vendorId: bulkVendorId }, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
       toast.success(`Vendor assigned to ${selectedTransfers.length} transfer(s)`)
-      setSelectedTransfers([])
       setShowBulkVendorModal(false)
-      fetchTransfers()
+      fetchTransfers(false)
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to assign vendor')
     } finally {
@@ -436,9 +647,8 @@ const TransfersEnhanced = () => {
       }
       await axios.put(`${API_BASE_URL}/bulk-operations/driver`, payload, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
       toast.success(`Driver assigned to ${selectedTransfers.length} transfer(s)`)
-      setSelectedTransfers([])
       setShowBulkDriverModal(false)
-      fetchTransfers()
+      fetchTransfers(false)
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to assign driver')
     } finally {
@@ -468,9 +678,8 @@ const TransfersEnhanced = () => {
       }
       const response = await axios.put(`${API_BASE_URL}/bulk-operations/return-driver`, payload, { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` } })
       toast.success(response.data?.message || `Return driver assigned to ${response.data?.updatedCount || 0} transfer(s)`)
-      setSelectedTransfers([])
       setShowBulkReturnDriverModal(false)
-      fetchTransfers()
+      fetchTransfers(false)
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to assign return driver')
     } finally {
@@ -516,7 +725,7 @@ const TransfersEnhanced = () => {
       if (response.data.success) {
         setTransferSyncResults(response.data.data)
         toast.success(response.data.message || 'Transfer sync completed successfully')
-        fetchTransfers()
+        fetchTransfers(false)
       } else {
         toast.error(response.data.message || 'Transfer sync failed')
         setTransferSyncResults(response.data.data || { errors: [] })
@@ -540,15 +749,16 @@ const TransfersEnhanced = () => {
   const handleExport = async (format = 'csv') => {
     try {
       const dataToExport = filteredTransfers.map(transfer => {
-        const { clientName, travelerName } = getClientAndTravelerNames(transfer)
+        const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
         return {
           'Transfer ID': transfer._id,
-          'Customer': clientName,
+          'Company': companyName || clientName,
+          'Client': clientName,
           'Traveler': travelerName,
           'Pickup Location': transfer.transfer_details?.pickup_location,
           'Drop Location': transfer.transfer_details?.drop_location,
-          'Status': transfer.transfer_details?.transfer_status,
-          'Pickup Time': new Date(transfer.transfer_details?.estimated_pickup_time).toLocaleString(),
+          'Status': getTransferStatusDisplay(transfer).label,
+          'Pickup Time': formatDateTimeFriendly(transfer.transfer_details?.estimated_pickup_time),
           'Vendor': transfer.vendor_details?.vendor_name,
           'Driver': transfer.assigned_driver_details?.name,
           'Flight': transfer.flight_details?.flight_no,
@@ -581,34 +791,57 @@ const TransfersEnhanced = () => {
     }
   }
 
+  // Unique companies and travelers for dropdowns
+  const uniqueCompanies = [...new Set(
+    transfers.flatMap(t => [
+      t.customer_details?.company_name,
+      t.traveler_details?.company_name
+    ].filter(Boolean))
+  )].sort((a, b) => (a || '').localeCompare(b || ''))
+
+  const travelersForCompany = companyFilter
+    ? [...new Set(
+        transfers
+          .filter(t => {
+            const c = t.customer_details?.company_name || t.traveler_details?.company_name
+            return (c || '').toLowerCase() === companyFilter.toLowerCase()
+          })
+          .flatMap(t => [t.traveler_details?.name, t.customer_details?.name].filter(Boolean))
+      )].sort((a, b) => (a || '').localeCompare(b || ''))
+    : []
+
   // Filter transfers
   const filteredTransfers = transfers.filter(transfer => {
-    const { clientName, travelerName } = getClientAndTravelerNames(transfer)
-    const matchesSearch = !searchTerm || 
-      clientName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      travelerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transfer.transfer_details?.pickup_location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transfer.transfer_details?.drop_location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transfer._id?.toLowerCase().includes(searchTerm.toLowerCase())
-    
+    if (companyFilter) {
+      const c = transfer.customer_details?.company_name || transfer.traveler_details?.company_name
+      if ((c || '').toLowerCase() !== companyFilter.toLowerCase()) return false
+    }
+    if (travelerFilter) {
+      const n = transfer.traveler_details?.name || transfer.customer_details?.name
+      if ((n || '').toLowerCase() !== travelerFilter.toLowerCase()) return false
+    }
     const status = transfer.transfer_details?.transfer_status || 'pending'
     const matchesStatus = statusFilter === 'all' || normalizeStatus(status) === statusFilter
-    
-    return matchesSearch && matchesStatus
+    return matchesStatus
   })
 
-  // Sort by pickup time for timeline view
+  // Sort: by company name or by latest (pickup time)
   const sortedTransfers = [...filteredTransfers].sort((a, b) => {
-    return new Date(a.transfer_details?.estimated_pickup_time || 0) - 
+    if (sortBy === 'company') {
+      const companyA = (a.customer_details?.company_name || a.traveler_details?.company_name || a.customer_details?.name || '').toLowerCase()
+      const companyB = (b.customer_details?.company_name || b.traveler_details?.company_name || b.customer_details?.name || '').toLowerCase()
+      return companyA.localeCompare(companyB)
+    }
+    return new Date(a.transfer_details?.estimated_pickup_time || 0) -
            new Date(b.transfer_details?.estimated_pickup_time || 0)
   })
 
-  // Pagination
+  // Pagination (use sorted order for both cards and timeline)
   const totalPages = Math.max(1, Math.ceil(filteredTransfers.length / perPage))
   const startIndex = (currentPage - 1) * perPage
   const endIndex = startIndex + perPage
-  const paginatedTransfers = filteredTransfers.slice(startIndex, endIndex)
-  const sortedTransfersPaginated = sortedTransfers.slice(startIndex, endIndex)
+  const paginatedTransfers = sortedTransfers.slice(startIndex, endIndex)
+  const sortedTransfersPaginated = paginatedTransfers
 
   // Status options – aligned with project flow (enroute merged into in_progress)
   const statusColors = {
@@ -629,47 +862,42 @@ const TransfersEnhanced = () => {
     return option ? option.color : 'bg-gray-100 dark:bg-gray-700/80 text-gray-800 dark:text-gray-200'
   }
 
-  // Enhanced transfer card component
+  // Minimal transfer card – company as hero, traveler below, client-friendly status
   const TransferCard = ({ transfer }) => {
-    const { clientName, travelerName } = getClientAndTravelerNames(transfer)
+    const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
     const status = transfer.transfer_details?.transfer_status || 'pending'
+    const { label: statusLabel, statusKey } = getTransferStatusDisplay(transfer)
     const isSelected = selectedTransfers.includes(transfer._id)
-    
-    // Check for onward flight (support flight_no and flight_number)
-    const onwardFlightNo = transfer.flight_details?.flight_no || transfer.flight_details?.flight_number
-    const hasOnwardFlight = onwardFlightNo && 
-                           onwardFlightNo !== 'XX000' && 
-                           onwardFlightNo !== 'TBD'
-    
-    // Check for return flight
-    const hasReturnFlight = transfer.return_flight_details?.flight_no && 
-                          transfer.return_flight_details.flight_no !== 'XX000' && 
-                          transfer.return_flight_details.flight_no !== 'TBD'
-    
-    // Check if return transfer exists but is missing flight details
     const hasReturnTransfer = transfer.return_transfer_details || transfer.return_flight_details
-    const isReturnFlightMissing = hasReturnTransfer && !hasReturnFlight
-    
-    // Check if return transfer is missing departure info
-    const isReturnDepartureMissing = hasReturnTransfer && 
-      (!transfer.return_transfer_details?.estimated_pickup_time || !transfer.return_flight_details?.departure_time)
 
-    const hasReturnIssues = isReturnFlightMissing || isReturnDepartureMissing
+    // Traveler: prefer traveler_details.name, fallback to customer name when it's a real value
+    const displayTraveler = travelerName || (clientName && clientName !== 'N/A' ? clientName : null)
 
     return (
       <div 
         onClick={() => { setSelectedTransfer(transfer); setShowDetailsModal(true) }}
-        className={`group bg-card rounded-xl border border-border overflow-hidden transition-all hover:border-muted-foreground/30 cursor-pointer ${
-          isSelected ? 'ring-2 ring-primary ring-offset-2 border-primary/50' : ''
+        className={`group relative bg-card rounded-xl border overflow-hidden transition-all hover:border-primary/50 hover:shadow-md cursor-pointer ${
+          isSelected ? 'ring-2 ring-primary ring-offset-2 border-primary/50' : 'border-border'
         }`}
       >
-        {/* Card header */}
-        <div className="px-4 sm:px-5 py-3.5 flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 min-w-0 flex-1">
+        {/* Delete – top corner, visible on admin hover */}
+        {canManageTransfers && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleDeleteClick(transfer) }}
+            className="absolute top-2 right-2 p-2 rounded-lg bg-card/90 backdrop-blur-sm border border-border opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all z-10"
+            title="Delete"
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
+
+        {/* Company name – main highlight */}
+        <div className="px-4 pt-4 pb-1">
+          <div className="flex items-start gap-3 min-w-0">
             {canManageTransfers && (
               <button
                 onClick={(e) => { e.stopPropagation(); handleTransferSelect(transfer._id, !isSelected) }}
-                className={`flex-shrink-0 mt-0.5 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                className={`flex-shrink-0 mt-1 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
               >
                 {isSelected ? (
                   <CheckSquare size={18} className="text-primary" />
@@ -678,146 +906,29 @@ const TransfersEnhanced = () => {
                 )}
               </button>
             )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className="font-mono text-xs text-muted-foreground">
-                  {transfer._id?.slice(-8) || 'N/A'}
-                </span>
-                {transfer.priority === 'high' && (
-                  <AlertTriangle size={12} className="text-amber-500 flex-shrink-0" />
-                )}
-                {transfer.priority === 'vip' && (
-                  <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded">VIP</span>
-                )}
-                {hasReturnTransfer && (
-                  <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">Round Trip</span>
-                )}
-              </div>
-              <div className="font-semibold text-foreground truncate">
-                {clientName || 'Unknown Customer'}
-              </div>
-              {travelerName && (
-                <div className="text-sm text-muted-foreground truncate">{travelerName}</div>
-              )}
+            <div className="min-w-0 flex-1 pr-8">
+              <h3 className="text-lg font-bold text-foreground truncate">
+                {companyName || clientName || 'Unknown Customer'}
+              </h3>
+              <p className="text-sm text-foreground/80 truncate mt-1 font-medium">
+                {displayTraveler || '—'}
+              </p>
             </div>
           </div>
-          <span className={`flex-shrink-0 px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getStatusColor(status)}`}>
-            {status.replace('_', ' ')}
-          </span>
         </div>
 
-        {/* Card body */}
-        <div className="px-4 sm:px-5 pb-4 space-y-4">
-          {/* Onward */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              <Plane size={12} />
-              Onward
-            </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm pl-4">
-              <span className="text-foreground">
-                {transfer.transfer_details?.pickup_location || '—'} → {transfer.transfer_details?.drop_location === 'TBD' || !transfer.transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.transfer_details?.drop_location || '—')}
-              </span>
-              <span className="text-muted-foreground">
-                {new Date(transfer.transfer_details?.estimated_pickup_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-              {hasOnwardFlight ? (
-                <span className="font-medium">{transfer.flight_details?.flight_no || transfer.flight_details?.flight_number}</span>
-              ) : (
-                <span className="text-amber-600 dark:text-amber-400 text-xs">Flight TBD</span>
-              )}
-            </div>
-          </div>
-
-          {/* Return */}
-          {hasReturnTransfer && (
-            <div className="space-y-2 pt-3 border-t border-border/60">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                <Plane size={12} className="rotate-180" />
-                Return
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm pl-4">
-                <span className="text-foreground">
-                  {transfer.return_transfer_details?.pickup_location || '—'} → {transfer.return_transfer_details?.drop_location === 'TBD' || !transfer.return_transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.return_transfer_details?.drop_location || '—')}
-                </span>
-                <span className="text-muted-foreground">
-                  {transfer.return_transfer_details?.estimated_pickup_time
-                    ? new Date(transfer.return_transfer_details.estimated_pickup_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    : '—'}
-                </span>
-                {hasReturnFlight ? (
-                  <span className="font-medium">{transfer.return_flight_details?.flight_no}</span>
-                ) : (
-                  <span className="text-amber-600 dark:text-amber-400 text-xs">Flight TBD</span>
-                )}
-              </div>
-              {hasReturnIssues && (
-                <p className="pl-4 text-xs text-amber-600 dark:text-amber-400">
-                  Add return flight details in transfer settings
-                </p>
-              )}
-            </div>
+        {/* Badges: Client-friendly status + Round Trip */}
+        <div className="px-4 pb-4 pt-2 flex items-center gap-2 flex-wrap">
+          <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColor(statusKey)}`}>
+            {statusLabel}
+          </span>
+          {transfer.priority === 'vip' && (
+            <span className="text-xs bg-purple-500/20 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded font-medium">VIP</span>
           )}
-
-          {/* Vendor & Driver - click Assigned to view details */}
-          <div className="flex flex-wrap gap-3 text-sm">
-            {transfer.vendor_details?.vendor_name ? (
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Building2 size={12} />
-                {transfer.vendor_details.vendor_name}
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-xs">
-                <Building2 size={12} />
-                No vendor
-              </span>
-            )}
-            {transfer.assigned_driver_details?.name ? (
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Car size={12} />
-                {transfer.assigned_driver_details.name}
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-muted-foreground/60 text-xs">
-                <Car size={12} />
-                No driver
-              </span>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center justify-between pt-3 border-t border-border/60">
-            {canManageTransfers && (
-              <div className="flex gap-1 p-0.5 rounded-lg bg-muted/50">
-                {['pending', 'assigned', 'in_progress', 'completed'].map(statusValue => (
-                  <button
-                    key={statusValue}
-                    onClick={() => handleQuickStatusChange(transfer._id, statusValue, transfer)}
-                    disabled={statusValue === status && statusValue !== 'assigned'}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                      statusValue === status
-                        ? 'bg-background shadow-sm text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                    title={statusValue === 'assigned' ? 'View vendor & driver assignment' : `Set status to ${statusValue}`}
-                  >
-                    {statusValue.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-0.5">
-              {canManageTransfers && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteClick(transfer) }}
-                  className="p-2 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                  title="Delete"
-                >
-                  <Trash2 size={16} />
-                </button>
-              )}
-            </div>
-          </div>
+          {transfer.priority === 'high' && <AlertTriangle size={12} className="text-amber-500" />}
+          {hasReturnTransfer && (
+            <span className="text-xs bg-blue-500/20 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded font-medium">Round Trip</span>
+          )}
         </div>
       </div>
     )
@@ -853,292 +964,20 @@ const TransfersEnhanced = () => {
                   ) : (
                     <ChevronDown size={20} className="text-muted-foreground" />
                   )}
-                  {new Date(date).toLocaleDateString('en-US', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                  })}
+                  {formatDateFriendly(date)}
                   <span className="text-sm text-muted-foreground font-normal">
                     ({dayTransfers.length} transfers)
                   </span>
                 </h3>
               </button>
             
-            {/* Timeline content – collapsible */}
+            {/* Timeline content – collapsible, same layout as cards view */}
             {!isCollapsed && (
-            <div className="relative p-4">
-              {/* Timeline line */}
-              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-border"></div>
-              
-              {/* Timeline items */}
-              <div className="space-y-4">
-                {dayTransfers.map((transfer) => {
-                  const { clientName, travelerName } = getClientAndTravelerNames(transfer)
-                  const status = transfer.transfer_details?.transfer_status || 'pending'
-                  const pickupTime = new Date(transfer.transfer_details?.estimated_pickup_time)
-                  
-                  // Check for onward flight (support flight_no and flight_number)
-                  const onwardFlightNo = transfer.flight_details?.flight_no || transfer.flight_details?.flight_number
-                  const hasOnwardFlight = onwardFlightNo && 
-                                         onwardFlightNo !== 'XX000' && 
-                                         onwardFlightNo !== 'TBD'
-                  
-                  // Check for return flight
-                  const hasReturnFlight = transfer.return_flight_details?.flight_no && 
-                                        transfer.return_flight_details.flight_no !== 'XX000' && 
-                                        transfer.return_flight_details.flight_no !== 'TBD'
-                  
-                  // Check if return transfer exists but is missing flight details
-                  const hasReturnTransfer = transfer.return_transfer_details || transfer.return_flight_details
-                  const isReturnFlightMissing = hasReturnTransfer && !hasReturnFlight
-                  
-                  // Check if return transfer is missing departure info
-                  const isReturnDepartureMissing = hasReturnTransfer && 
-                    (!transfer.return_transfer_details?.estimated_pickup_time || !transfer.return_flight_details?.departure_time)
-                  
-                  return (
-                    <div key={transfer._id} className="relative flex items-start gap-4">
-                      {/* Timeline node – status icon (enroute = In Progress) */}
-                      <div className={`relative z-10 w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-sm ring-2 ring-background ${
-                        status === 'completed' ? 'bg-green-500 text-white' :
-                        ['in_progress', 'enroute'].includes(status) ? 'bg-blue-500 text-white' :
-                        status === 'assigned' ? 'bg-purple-500 text-white' :
-                        'bg-gray-500 text-white'
-                      }`}>
-                        {status === 'completed' ? (
-                          <CheckCircle size={16} strokeWidth={2.5} />
-                        ) : ['in_progress', 'enroute'].includes(status) ? (
-                          <Navigation size={16} strokeWidth={2.5} />
-                        ) : status === 'assigned' ? (
-                          <User size={16} strokeWidth={2.5} />
-                        ) : (
-                          <Clock size={16} strokeWidth={2.5} />
-                        )}
-                      </div>
-                      
-                      {/* Timeline content */}
-                      <div className="flex-1 min-w-0">
-                        <div 
-                          onClick={() => { setSelectedTransfer(transfer); setShowDetailsModal(true) }}
-                          className={`bg-card rounded-lg border border-border p-4 shadow-sm transition-all cursor-pointer hover:border-muted-foreground/30 ${
-                            selectedTransfers.includes(transfer._id) ? 'ring-2 ring-primary ring-offset-2' : ''
-                          }`}
-                        >
-                          {/* Header */}
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <span className="text-sm font-medium text-muted-foreground">
-                                {pickupTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(normalizeStatus(status))}`}>
-                                {['enroute', 'in_progress'].includes(status) ? 'In Progress' : String(status || 'pending').replace(/_/g, ' ')}
-                              </span>
-                              {transfer.priority === 'high' && (
-                                <AlertTriangle size={14} className="text-red-500" />
-                              )}
-                              {transfer.priority === 'vip' && (
-                                <span className="text-xs bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 px-2 py-1 rounded-full">VIP</span>
-                              )}
-                              {hasReturnTransfer && (
-                                <span className="text-xs bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full">
-                                  Round Trip
-                                </span>
-                              )}
-                              {isReturnFlightMissing && (
-                                <span className="text-xs bg-red-100 dark:bg-red-900/60 text-red-800 dark:text-red-200 px-2 py-1 rounded-full">
-                                  Return Flight Missing
-                                </span>
-                              )}
-                              {isReturnDepartureMissing && (
-                                <span className="text-xs bg-orange-100 dark:bg-orange-900/60 text-orange-800 dark:text-orange-200 px-2 py-1 rounded-full">
-                                  Return Departure Missing
-                                </span>
-                              )}
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
-                              {canManageTransfers && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleTransferSelect(transfer._id, !selectedTransfers.includes(transfer._id)) }}
-                                  className="flex-shrink-0"
-                                >
-                                  {selectedTransfers.includes(transfer._id) ? (
-                                    <CheckSquare size={16} className="text-primary" />
-                                  ) : (
-                                    <Square size={16} className="text-muted-foreground" />
-                                  )}
-                                </button>
-                              )}
-                              
-                              {canManageTransfers && (
-                                <>
-                                  <button
-                                    onClick={() => {
-                                      setSelectedTransfer(transfer)
-                                      setShowDetailsModal(true)
-                                    }}
-                                    className="p-1 rounded hover:bg-muted text-muted-foreground"
-                                    title="Edit"
-                                  >
-                                    <Edit size={14} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteClick(transfer)}
-                                    className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400"
-                                    title="Delete"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          
-                          {/* Content */}
-                          <div className="space-y-3">
-                            <div className="font-semibold text-foreground">
-                              {clientName || 'Unknown Customer'}
-                            </div>
-                            {travelerName && (
-                              <div className="text-sm text-muted-foreground">
-                                Traveler: {travelerName}
-                              </div>
-                            )}
-                            
-                            {/* Onward Transfer */}
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                                <Plane size={14} className="text-muted-foreground" />
-                                <span>Onward</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
-                                <MapPin size={14} className="text-muted-foreground" />
-                                <span className="truncate">
-                                  {transfer.transfer_details?.pickup_location} → {transfer.transfer_details?.drop_location === 'TBD' || !transfer.transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.transfer_details?.drop_location || '—')}
-                                </span>
-                              </div>
-                              {hasOnwardFlight ? (
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
-                                  <Plane size={14} className="text-muted-foreground" />
-                                  <span>{transfer.flight_details?.flight_no || transfer.flight_details?.flight_number}</span>
-                                  {transfer.flight_details?.departure_time && (
-                                    <span className="text-xs text-muted-foreground">
-                                      ({new Date(transfer.flight_details.departure_time).toLocaleTimeString([], {
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                      })})
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2 text-red-500 text-sm ml-6">
-                                  <AlertTriangle size={14} />
-                                  <span className="text-xs">Flight Missing</span>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Return Transfer */}
-                            {hasReturnTransfer && (
-                              <div className="space-y-2">
-                              <div className="space-y-2 border-t border-border pt-3">
-                                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                                  <Plane size={14} className="text-muted-foreground rotate-180" />
-                                  <span>Return</span>
-                                  {isReturnFlightMissing && (
-                                    <AlertTriangle size={14} className="text-red-500" />
-                                  )}
-                                  {isReturnDepartureMissing && (
-                                    <AlertTriangle size={14} className="text-orange-500" />
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
-                                  <MapPin size={14} className="text-muted-foreground" />
-                                  <span className="truncate">
-                                    {transfer.return_transfer_details?.pickup_location || 'TBD'} → {transfer.return_transfer_details?.drop_location === 'TBD' || !transfer.return_transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.return_transfer_details?.drop_location || 'TBD')}
-                                  </span>
-                                </div>
-                                {hasReturnFlight ? (
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
-                                    <Plane size={14} className="text-muted-foreground" />
-                                    <span>{transfer.return_flight_details.flight_no}</span>
-                                    {transfer.return_flight_details?.departure_time && (
-                                      <span className="text-xs text-muted-foreground">
-                                        ({new Date(transfer.return_flight_details.departure_time).toLocaleTimeString([], {
-                                          hour: '2-digit',
-                                          minute: '2-digit'
-                                        })})
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-2 text-red-500 text-sm ml-6">
-                                    <AlertTriangle size={14} />
-                                    <span className="text-xs">Flight Missing</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Return specific warnings */}
-                              <div className="space-y-2">
-                              {isReturnFlightMissing && (
-                                <div className="ml-6 p-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded text-xs text-red-700 dark:text-red-300">
-                                  ⚠️ Return flight details are missing. Please add return flight information.
-                                </div>
-                              )}
-                              
-                              {isReturnDepartureMissing && (
-                                <div className="ml-6 p-2 bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded text-xs text-orange-700 dark:text-orange-300">
-                                  ⚠️ Return departure date/time is missing. Please add return transfer details.
-                                </div>
-                              )}
-                              </div>
-                            </div>
-                            )}
-
-                            {/* Vendor and Driver */}
-                            <div className="flex items-center gap-4 text-sm">
-                              {transfer.vendor_details?.vendor_name && (
-                                <div className="flex items-center gap-2">
-                                  <Building2 size={14} className="text-muted-foreground" />
-                                  <span className="truncate">{transfer.vendor_details.vendor_name}</span>
-                                </div>
-                              )}
-                              {transfer.assigned_driver_details?.name && (
-                                <div className="flex items-center gap-2">
-                                  <Car size={14} className="text-muted-foreground" />
-                                  <span className="truncate">{transfer.assigned_driver_details.name}</span>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Quick Actions */}
-                            {canManageTransfers && (
-                              <div className="flex items-center gap-2 pt-2 border-t border-border">
-                                {['pending', 'assigned', 'in_progress', 'completed'].map(statusValue => (
-                                  <button
-                                    key={statusValue}
-                                    onClick={() => handleQuickStatusChange(transfer._id, statusValue, transfer)}
-                                    disabled={statusValue === status && statusValue !== 'assigned'}
-                                    className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                                      statusValue === status 
-                                        ? 'bg-muted text-muted-foreground'
-                                        : 'bg-background hover:bg-muted border border-border'
-                                    }`}
-                                    title={statusValue === 'assigned' ? 'View vendor & driver assignment' : undefined}
-                                  >
-                                    {statusValue.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+            <div className="p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
+                {dayTransfers.map((transfer) => (
+                  <TransferCard key={transfer._id} transfer={transfer} />
+                ))}
               </div>
             </div>
             )}
@@ -1155,8 +994,8 @@ const TransfersEnhanced = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-full mx-auto">
+    <div className="min-h-screen bg-background w-full">
+      <div className="w-full max-w-full mx-auto">
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -1182,32 +1021,34 @@ const TransfersEnhanced = () => {
                   Sync Transfers
                 </button>
               )}
-              <div className="flex items-center bg-muted rounded-lg p-1">
-                {['cards', 'timeline'].map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => setViewMode(mode)}
-                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                      viewMode === mode 
-                        ? 'bg-background text-foreground shadow-sm' 
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-muted rounded-lg p-1">
+                  {['cards', 'timeline'].map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => setViewMode(mode)}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        viewMode === mode 
+                          ? 'bg-background text-foreground shadow-sm' 
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Stats – single row */}
-          <div className="flex flex-nowrap gap-3 sm:gap-4 mb-6 overflow-x-auto pb-1 -mx-1">
+          {/* Stats – spread across full width */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 w-full">
             {statusOptions.map(option => {
-              const count = filteredTransfers.filter(t => 
+              const count = filteredTransfers.filter(t =>
                 (t.transfer_details?.transfer_status || 'pending') === option.value
               ).length
               return (
-                <div key={option.value} className="bg-card rounded-lg border border-border p-3 sm:p-4 flex-shrink-0 min-w-[100px] sm:min-w-[120px]">
+                <div key={option.value} className="bg-card rounded-lg border border-border p-3 sm:p-4 min-w-0">
                   <div className="text-xl sm:text-2xl font-bold text-foreground">{count}</div>
                   <div className="text-xs sm:text-sm text-muted-foreground">{option.label}</div>
                 </div>
@@ -1216,99 +1057,36 @@ const TransfersEnhanced = () => {
           </div>
         </div>
 
-        {/* Bulk Actions Toolbar */}
-        {selectedTransfers.length > 0 && (
-          <div className="bg-card rounded-lg border border-border p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="font-medium">
-                  {selectedTransfers.length} transfer{selectedTransfers.length > 1 ? 's' : ''} selected
-                </span>
-                <button
-                  onClick={() => handleSelectAll(false)}
-                  className="text-sm text-muted-foreground hover:text-foreground"
-                >
-                  Clear selection
-                </button>
-              </div>
-              
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => setShowBulkStatusModal(true)}
-                  disabled={bulkLoading}
-                  className="px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 text-sm"
-                >
-                  Update Status
-                </button>
-                <button
-                  onClick={() => setShowBulkVendorModal(true)}
-                  disabled={bulkLoading}
-                  className="px-3 py-1.5 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 text-sm"
-                >
-                  Assign Vendor
-                </button>
-                <button
-                  onClick={() => setShowBulkDriverModal(true)}
-                  disabled={bulkLoading}
-                  className="px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50 text-sm"
-                >
-                  Assign Driver
-                </button>
-                {(() => {
-                  const eligibleReturn = transfers.filter(t => selectedTransfers.includes(t._id) && t.return_transfer_details && (t.transfer_details?.transfer_status || 'pending') === 'completed')
-                  return eligibleReturn.length > 0 && (
-                    <button
-                      onClick={() => setShowBulkReturnDriverModal(true)}
-                      disabled={bulkLoading}
-                      className="px-3 py-1.5 bg-indigo-500 text-white rounded hover:bg-indigo-600 disabled:opacity-50 text-sm"
-                    >
-                      Assign Return Driver ({eligibleReturn.length})
-                    </button>
-                  )
-                })()}
-                <button
-                  onClick={() => { setDeleteAllBulk(false); setShowBulkDeleteConfirm(true) }}
-                  disabled={bulkLoading}
-                  className="px-3 py-1.5 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50 text-sm flex items-center gap-1"
-                >
-                  <Trash2 size={14} />
-                  Delete ({selectedTransfers.length})
-                </button>
-                <button
-                  onClick={() => { setDeleteAllBulk(true); setShowBulkDeleteConfirm(true) }}
-                  disabled={bulkLoading || filteredTransfers.length === 0}
-                  className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 text-sm flex items-center gap-1"
-                  title="Delete all transfers (respects current filters)"
-                >
-                  <Trash2 size={14} />
-                  Delete all ({filteredTransfers.length})
-                </button>
-                <button
-                  onClick={() => handleExport('csv')}
-                  className="px-3 py-1.5 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
-                >
-                  <Download size={14} />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Search and Filters */}
+        {/* Search and Filters – above bulk actions */}
         <div className="bg-card rounded-lg border border-border p-4 mb-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search transfers..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+          <div className="flex flex-col sm:flex-row gap-4 flex-wrap items-end w-full">
+            <div className="flex-1 min-w-[180px] sm:min-w-[200px]">
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Company</label>
+              <Dropdown
+                value={companyFilter}
+                onChange={(e) => setCompanyFilter(e.target.value)}
+                options={[
+                  { value: '', label: 'All companies' },
+                  ...uniqueCompanies.map(c => ({ value: c, label: c }))
+                ]}
+                placeholder="Select company"
+                minWidth="100%"
               />
             </div>
-            
-            <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-[180px] sm:min-w-[200px]">
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Traveler</label>
+              <Dropdown
+                value={travelerFilter}
+                onChange={(e) => setTravelerFilter(e.target.value)}
+                options={[
+                  { value: '', label: !companyFilter ? 'Select company first' : 'All travelers' },
+                  ...travelersForCompany.map(t => ({ value: t, label: t }))
+                ]}
+                placeholder={!companyFilter ? 'Select company first' : 'Select traveler'}
+                minWidth="100%"
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
               <Dropdown
                 name="statusFilter"
                 value={statusFilter}
@@ -1320,12 +1098,12 @@ const TransfersEnhanced = () => {
                 placeholder="All Status"
                 minWidth="140px"
               />
-              
-              {(statusFilter !== 'all' || searchTerm) && (
+              {(statusFilter !== 'all' || companyFilter || travelerFilter) && (
                 <button
                   onClick={() => {
                     setStatusFilter('all')
-                    setSearchTerm('')
+                    setCompanyFilter('')
+                    setTravelerFilter('')
                   }}
                   className="px-3 py-2 bg-transparent border border-input rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 >
@@ -1336,6 +1114,154 @@ const TransfersEnhanced = () => {
           </div>
         </div>
 
+        {/* Bulk Actions Toolbar – below search */}
+        {selectedTransfers.length > 0 && (() => {
+          const selected = transfers.filter(t => selectedTransfers.includes(t._id))
+          const needVendor = selected.filter(t => !t.vendor_details?.vendor_name && !t.vendor_details?.vendor_id).length
+          const needDriver = selected.filter(t => (t.vendor_details?.vendor_name || t.vendor_details?.vendor_id) && !t.assigned_driver_details?.name && !t.assigned_driver_details?.driver_name).length
+          const withReturn = selected.filter(t => t.return_transfer_details || t.return_flight_details)
+          const eligibleReturn = withReturn.filter(t => (t.transfer_details?.transfer_status || 'pending') === 'completed')
+          const needReturnDriver = eligibleReturn.filter(t => !t.return_assigned_driver_details?.name && !t.return_assigned_driver_details?.driver_name).length
+          const vendorDone = needVendor === 0
+          const driverDone = needVendor === 0 && needDriver === 0
+          const returnDriverDone = (needVendor === 0 && needDriver === 0) && (eligibleReturn.length === 0 || needReturnDriver === 0)
+          const returnSectionDisabled = withReturn.length > 0 && eligibleReturn.length === 0
+
+          const onwardStatuses = selected.map(t => normalizeStatus(t.transfer_details?.transfer_status || 'pending'))
+          const minOnward = onwardStatuses.some(s => s === 'pending') ? 'pending' : onwardStatuses.some(s => s === 'assigned') ? 'assigned' : onwardStatuses.some(s => s === 'in_progress') ? 'in_progress' : 'completed'
+          const onwardInTransitDone = ['in_progress', 'completed'].includes(minOnward)
+          const onwardCompleted = onwardStatuses.every(s => s === 'completed')
+
+          const returnStatuses = withReturn.map(t => normalizeStatus(t.return_transfer_details?.transfer_status || t.return_transfer_details?.status || 'pending'))
+          const minReturn = returnStatuses.some(s => s === 'pending') ? 'pending' : returnStatuses.some(s => s === 'assigned') ? 'assigned' : returnStatuses.some(s => s === 'in_progress') ? 'in_progress' : 'completed'
+          const returnInTransitDone = returnStatuses.length > 0 && ['in_progress', 'completed'].includes(minReturn)
+          const returnCompleted = returnStatuses.length > 0 && returnStatuses.every(s => s === 'completed')
+
+          const allCompleted = onwardCompleted && (withReturn.length === 0 || returnCompleted)
+
+          const nextOnward = !vendorDone ? 'vendor' : !driverDone ? 'driver' : !onwardInTransitDone ? 'inTransit' : !onwardCompleted ? 'completed' : null
+          const nextReturn = withReturn.length === 0 ? null : !vendorDone ? 'returnVendor' : !returnDriverDone ? 'returnDriver' : !returnInTransitDone ? 'inTransit' : !returnCompleted ? 'completed' : null
+
+          const btnBase = 'h-8 min-w-[2rem] px-2.5 rounded-md text-sm font-medium inline-flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed'
+          const btnNext = 'bg-primary/90 dark:bg-primary/70 text-primary-foreground hover:bg-primary dark:hover:bg-primary/80 ring-1 ring-primary/30'
+          const btnDone = 'bg-emerald-500/15 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+          const btnDefault = 'bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent'
+
+          const StepBtn = ({ step, done, isNext, onClick, disabled, children }) => (
+            <button
+              onClick={onClick}
+              disabled={disabled}
+              className={`${btnBase} rounded-md ${isNext ? btnNext : done ? btnDone : btnDefault}`}
+            >
+              {done ? <CheckCircle size={14} className="shrink-0" /> : null}
+              {children}
+            </button>
+          )
+
+          return (
+          <div className="bg-card rounded-lg border border-border p-5 mb-6">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="font-semibold text-foreground">
+                  {selectedTransfers.length} transfer{selectedTransfers.length > 1 ? 's' : ''} selected
+                </span>
+                <button
+                  onClick={() => handleSelectAll(false)}
+                  className="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                >
+                  Clear selection
+                </button>
+              </div>
+
+              {/* Flow: Onward | Return – two clear sections */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 py-3 border-y border-border">
+                {/* Onward (Arrival) */}
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Plane size={12} />
+                    Onward
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StepBtn step="vendor" done={vendorDone} isNext={nextOnward === 'vendor'} onClick={() => { setBulkVendorLeg('onward'); setShowBulkVendorModal(true) }} disabled={bulkLoading || allCompleted}>
+                      {!vendorDone && <Building2 size={14} className="shrink-0" />}
+                      1. Vendor
+                    </StepBtn>
+                    <StepBtn step="driver" done={driverDone} isNext={nextOnward === 'driver'} onClick={() => setShowBulkDriverModal(true)} disabled={bulkLoading || !vendorDone || allCompleted}>
+                      {!driverDone && <User size={14} className="shrink-0" />}
+                      2. Driver
+                    </StepBtn>
+                    <StepBtn step="inTransit" done={onwardInTransitDone} isNext={nextOnward === 'inTransit'} onClick={() => handleBulkStatusUpdate('in_progress', 'onward')} disabled={bulkLoading || !driverDone || allCompleted}>
+                      3. In transit
+                    </StepBtn>
+                    <StepBtn step="completed" done={onwardCompleted} isNext={nextOnward === 'completed'} onClick={() => handleBulkStatusUpdate('completed', 'onward')} disabled={bulkLoading || !driverDone || allCompleted}>
+                      4. Completed
+                    </StepBtn>
+                  </div>
+                </div>
+
+                {/* Return (Departure) */}
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Plane size={12} className="rotate-180" />
+                    Return
+                  </div>
+                  {withReturn.length > 0 ? (
+                    <div className={`flex flex-wrap items-center gap-2 ${returnSectionDisabled ? 'opacity-60' : ''}`}>
+                      <StepBtn step="returnVendor" done={vendorDone} isNext={nextReturn === 'returnVendor'} onClick={() => { setBulkVendorLeg('return'); setShowBulkVendorModal(true) }} disabled={bulkLoading || returnSectionDisabled || allCompleted}>
+                        {!vendorDone && <Building2 size={14} className="shrink-0" />}
+                        1. Vendor
+                      </StepBtn>
+                      <StepBtn step="returnDriver" done={returnDriverDone} isNext={nextReturn === 'returnDriver'} onClick={() => setShowBulkReturnDriverModal(true)} disabled={bulkLoading || returnSectionDisabled || allCompleted}>
+                        {!returnDriverDone && <User size={14} className="shrink-0" />}
+                        2. Driver
+                      </StepBtn>
+                      <StepBtn step="inTransit" done={returnInTransitDone} isNext={nextReturn === 'inTransit'} onClick={() => handleBulkStatusUpdate('in_progress', 'return')} disabled={bulkLoading || returnSectionDisabled || !returnDriverDone || allCompleted}>
+                        3. In transit
+                      </StepBtn>
+                      <StepBtn step="completed" done={returnCompleted} isNext={nextReturn === 'completed'} onClick={() => handleBulkStatusUpdate('completed', 'return')} disabled={bulkLoading || returnSectionDisabled || !returnDriverDone || allCompleted}>
+                        4. Completed
+                      </StepBtn>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No return leg</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions – right aligned */}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  onClick={handleBulkClearStatus}
+                  disabled={bulkLoading}
+                  className="px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                  title="Reset vendor, driver, and status to fresh (pending)"
+                >
+                  <RotateCcw size={14} />
+                  Clear status
+                </button>
+                <button
+                  onClick={() => { setDeleteAllBulk(false); setShowBulkDeleteConfirm(true) }}
+                  disabled={bulkLoading}
+                  className="px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                >
+                  <Trash2 size={14} />
+                  Delete selected ({selectedTransfers.length})
+                </button>
+                <button
+                  onClick={() => { setDeleteAllBulk(true); setShowBulkDeleteConfirm(true) }}
+                  disabled={bulkLoading || filteredTransfers.length === 0}
+                  className="px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                  title="Delete all transfers (respects current filters)"
+                >
+                  <Trash2 size={14} />
+                  Delete all ({filteredTransfers.length})
+                </button>
+              </div>
+            </div>
+          </div>
+          )
+        })()}
+
         {/* Transfers Display */}
         {loading ? (
           <div className="bg-card rounded-xl shadow-sm border border-border p-12 text-center">
@@ -1344,59 +1270,18 @@ const TransfersEnhanced = () => {
         ) : filteredTransfers.length === 0 ? (
           <div className="bg-card rounded-xl shadow-sm border border-border p-12 text-center">
             <div className="text-base text-muted-foreground">
-              {searchTerm || statusFilter !== 'all' ? 'No transfers found matching your criteria' : 'No transfers found'}
+              {companyFilter || travelerFilter || statusFilter !== 'all' ? 'No transfers found matching your criteria' : 'No transfers found'}
             </div>
           </div>
         ) : viewMode === 'timeline' ? (
           <TimelineView />
         ) : (
-          <div className="space-y-4">
-            {/* Select page / Select all */}
-            {canManageTransfers && paginatedTransfers.length > 0 && (
-              <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg flex-wrap">
-                <button
-                  onClick={() => {
-                    const pageIds = paginatedTransfers.map(t => t._id)
-                    const allSelected = pageIds.every(id => selectedTransfers.includes(id))
-                    if (allSelected) {
-                      setSelectedTransfers(prev => prev.filter(id => !pageIds.includes(id)))
-                    } else {
-                      setSelectedTransfers(prev => [...new Set([...prev, ...pageIds])])
-                    }
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  {paginatedTransfers.every(t => selectedTransfers.includes(t._id)) ? (
-                    <CheckSquare size={18} className="text-primary" />
-                  ) : (
-                    <Square size={18} className="text-muted-foreground" />
-                  )}
-                  <span className="text-sm">
-                    {paginatedTransfers.every(t => selectedTransfers.includes(t._id)) ? 'Deselect page' : 'Select page'}
-                  </span>
-                </button>
-                <button
-                  onClick={() => handleSelectAll(selectedTransfers.length < filteredTransfers.length)}
-                  className="flex items-center gap-2"
-                >
-                  {selectedTransfers.length === filteredTransfers.length && filteredTransfers.length > 0 ? (
-                    <CheckSquare size={18} className="text-primary" />
-                  ) : (
-                    <Square size={18} className="text-muted-foreground" />
-                  )}
-                  <span className="text-sm">
-                    {selectedTransfers.length === filteredTransfers.length && filteredTransfers.length > 0 ? 'Deselect all' : 'Select all'}
-                  </span>
-                </button>
-                <span className="text-sm text-muted-foreground">
-                  {filteredTransfers.length} transfers
-                </span>
-              </div>
-            )}
-            
-            {paginatedTransfers.map(transfer => (
-              <TransferCard key={transfer._id} transfer={transfer} />
-            ))}
+          <div className="w-full space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
+              {paginatedTransfers.map(transfer => (
+                <TransferCard key={transfer._id} transfer={transfer} />
+              ))}
+            </div>
           </div>
         )}
 
@@ -1611,7 +1496,7 @@ const TransfersEnhanced = () => {
         {showBulkVendorModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card rounded-lg border border-border p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold mb-4">Assign Vendor to {selectedTransfers.length} Transfers</h3>
+              <h3 className="text-lg font-semibold mb-4">{bulkVendorLeg === 'return' ? 'Assign Return Vendor' : 'Assign Onward Vendor'}</h3>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">Select Vendor</label>
@@ -1656,16 +1541,17 @@ const TransfersEnhanced = () => {
         {/* Bulk Driver Modal */}
         {showBulkDriverModal && (() => {
           const selectedObjs = transfers.filter(t => selectedTransfers.includes(t._id))
-          const withVendor = selectedObjs.filter(t => t.vendor_details?.vendor_id)
-          const withoutVendor = selectedObjs.filter(t => !t.vendor_details?.vendor_id)
+          const getVendorId = (t) => (t.vendor_details?.vendor_id || t.vendor_details?.vendorId || '').toString().trim()
+          const withVendor = selectedObjs.filter(t => getVendorId(t))
+          const withoutVendor = selectedObjs.filter(t => !getVendorId(t))
           const hasVendorMissing = withoutVendor.length > 0
-          const vendorIds = [...new Set(withVendor.map(t => t.vendor_details.vendor_id))]
+          const vendorIds = [...new Set(withVendor.map(t => getVendorId(t)).filter(Boolean))]
           const allSameVendor = vendorIds.length === 1
           const hasMixedVendors = vendorIds.length > 1
           return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card rounded-lg border border-border p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold mb-4">Assign Driver to {selectedTransfers.length} Transfer{selectedTransfers.length !== 1 ? 's' : ''}</h3>
+              <h3 className="text-lg font-semibold mb-4">Assign Onward Driver</h3>
               {/* Vendor status summary */}
               <div className="mb-4 p-3 rounded-lg bg-muted/50 border border-border text-sm">
                 {hasVendorMissing ? (
@@ -1752,7 +1638,7 @@ const TransfersEnhanced = () => {
           return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
             <div className="bg-card rounded-lg border border-border p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold mb-4">Assign Return Driver to {eligible.length} Transfer{eligible.length !== 1 ? 's' : ''}</h3>
+              <h3 className="text-lg font-semibold mb-4">Assign Return Driver</h3>
               {eligible.length === 0 ? (
                 <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
                   <p>No eligible transfers. Only round-trip transfers with <strong>onward leg completed</strong> can have a return driver assigned.</p>
@@ -1926,282 +1812,306 @@ const TransfersEnhanced = () => {
           </div>
         )}
 
-        {/* Bulk Status Modal */}
-        {showBulkStatusModal && (() => {
-          const selectedObjs = transfers.filter(t => selectedTransfers.includes(t._id))
-          const withReturn = selectedObjs.filter(t => t.return_transfer_details)
-          return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
-            <div className="bg-card rounded-lg border border-border p-6 max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto">
-              <h3 className="text-lg font-semibold mb-4">Update Status for {selectedTransfers.length} Transfer{selectedTransfers.length !== 1 ? 's' : ''}</h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {/* Onward (Arrival) – left */}
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
-                    <Plane size={14} />
-                    Onward (Arrival)
-                  </h4>
-                  <p className="text-xs text-muted-foreground mb-2">Update arrival leg only</p>
-                  <div className="space-y-2">
-                    {statusOptions.map(option => (
-                      <button
-                        key={`onward-${option.value}`}
-                        onClick={() => handleBulkStatusUpdate(option.value, 'onward')}
-                        disabled={bulkLoading}
-                        className={`w-full p-3 rounded-lg border text-left font-medium transition-all duration-200
-                          hover:scale-[1.02] hover:shadow-md hover:border-foreground/20
-                          focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2
-                          active:scale-[0.99] active:shadow-sm
-                          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none
-                          ${option.color}`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+        {/* Flight Add/Update Drawer (above transfer drawer) */}
+        <Drawer
+          isOpen={showFlightDrawer && !!selectedTransfer}
+          onClose={() => setShowFlightDrawer(false)}
+          title={flightDrawerLeg === 'onward' ? 'Add / Update Onward Flight' : 'Add / Update Return Flight'}
+          subtitle="Enter flight number to fetch details"
+          size="md"
+          position="right"
+          zIndex={1100}
+        >
+          {selectedTransfer && (
+            <div className="p-6 space-y-6">
+              {/* Search form */}
+              <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-5 space-y-5">
+                <p className="text-sm text-muted-foreground">
+                  Enter the flight number and travel date to fetch live flight information.
+                </p>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">Flight Number</label>
+                    <input
+                      type="text"
+                      value={flightNumberInput}
+                      onChange={e => { setFlightNumberInput(e.target.value); setFlightFetchError(null) }}
+                      placeholder="e.g. EY488, AI602"
+                      className="w-full py-2.5 px-4 border border-input rounded-lg bg-background text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow"
+                      onKeyDown={e => e.key === 'Enter' && handleFetchFlight()}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">Travel Date</label>
+                    <div className="relative">
+                      <Calendar size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none z-10" />
+                      <DatePicker
+                        selected={flightDateInput ? new Date(flightDateInput + 'T12:00:00') : null}
+                        onChange={(date) => setFlightDateInput(date ? date.toISOString().slice(0, 10) : '')}
+                        minDate={startOfDay(new Date())}
+                        dateFormat="yyyy-MM-dd"
+                        placeholderText="Select date"
+                        className="w-full py-2.5 pl-10 pr-4 border border-input rounded-lg bg-background text-foreground text-sm min-h-[42px] placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-shadow"
+                        calendarClassName="halo-datepicker-calendar"
+                        popperClassName="halo-datepicker-popper"
+                      />
+                    </div>
                   </div>
                 </div>
-
-                {/* Return (Departure) – right */}
-                <div>
-                  <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
-                    <Plane size={14} className="rotate-180" />
-                    Return (Departure)
-                  </h4>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    {withReturn.length > 0
-                      ? `Update return leg only (${withReturn.length} of ${selectedTransfers.length} have return)`
-                      : 'No selected transfers have a return leg'}
-                  </p>
-                  <div className="space-y-2">
-                    {statusOptions.map(option => (
-                      <button
-                        key={`return-${option.value}`}
-                        onClick={() => handleBulkStatusUpdate(option.value, 'return')}
-                        disabled={bulkLoading || withReturn.length === 0}
-                        className={`w-full p-3 rounded-lg border text-left font-medium transition-all duration-200
-                          hover:scale-[1.02] hover:shadow-md hover:border-foreground/20
-                          focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2
-                          active:scale-[0.99] active:shadow-sm
-                          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none
-                          ${option.color}`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => setShowBulkStatusModal(false)}
-                  className="flex-1 px-4 py-2 bg-muted text-foreground rounded-lg font-medium
-                    hover:bg-muted/80 hover:shadow-sm transition-all duration-200
-                    focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2
-                    active:scale-[0.99]"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-          )
-        })()}
-
-        {/* Transfer Details Modal */}
-        {showDetailsModal && selectedTransfer && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
-            <div className="bg-card rounded-xl border border-border shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
-              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">
-                    {selectedTransfer._id}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    {getClientAndTravelerNames(selectedTransfer).clientName}
-                    {getClientAndTravelerNames(selectedTransfer).travelerName && (
-                      <> · {getClientAndTravelerNames(selectedTransfer).travelerName}</>
+                <div className="pt-2">
+                  <button
+                    onClick={handleFetchFlight}
+                    disabled={flightFetchLoading || !flightNumberInput?.trim()}
+                    className="w-full py-3 px-4 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5 transition-colors shadow-sm"
+                  >
+                    {flightFetchLoading ? (
+                      <>
+                        <RefreshCw size={18} className="animate-spin" />
+                        Fetching...
+                      </>
+                    ) : (
+                      <>
+                        <Plane size={18} />
+                        Fetch Flight Details
+                      </>
                     )}
-                  </p>
+                  </button>
                 </div>
-                <span className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize ${getStatusColor(selectedTransfer.transfer_details?.transfer_status || 'pending')}`}>
-                  {selectedTransfer.transfer_details?.transfer_status?.replace('_', ' ') || 'pending'}
-                </span>
               </div>
-              <div className="p-6 overflow-y-auto space-y-5">
-                {/* Onward Transfer */}
-                <div>
-                  <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
-                    <Plane size={16} className="text-muted-foreground" />
-                    Onward Transfer
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4 ml-6">
-                    <div>
-                      <strong>Pickup:</strong> {selectedTransfer.transfer_details?.pickup_location}
-                    </div>
-                    <div>
-                      <strong>Drop:</strong> {selectedTransfer.transfer_details?.drop_location}
-                    </div>
-                    <div>
-                      <strong>Pickup Time:</strong> {new Date(selectedTransfer.transfer_details?.estimated_pickup_time).toLocaleString()}
-                    </div>
-                    <div>
-                      <strong>Status:</strong> {selectedTransfer.transfer_details?.transfer_status}
+
+              {flightFetchError && (
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800/60 text-sm text-red-700 dark:text-red-300">
+                  <AlertTriangle size={20} className="flex-shrink-0 mt-0.5" />
+                  <span>{flightFetchError}</span>
+                </div>
+              )}
+
+              {fetchedFlightData && (
+                <div className="space-y-4">
+                  <div className="p-5 rounded-xl bg-muted/30 dark:bg-muted/20 border border-border">
+                    <h4 className="font-semibold text-foreground mb-4">{fetchedFlightData.flight} – {fetchedFlightData.airlineName || fetchedFlightData.airlineCode}</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="text-muted-foreground">Route:</span> <span className="text-foreground">{fetchedFlightData.departureAirport} → {fetchedFlightData.arrivalAirport}</span></div>
+                      <div><span className="text-muted-foreground">Departure:</span> <span className="text-foreground">{formatDateTimeFriendly(fetchedFlightData.departureTime)}</span></div>
+                      <div><span className="text-muted-foreground">Arrival:</span> <span className="text-foreground">{formatDateTimeFriendly(fetchedFlightData.arrivalTime)}</span></div>
+                      {fetchedFlightData.terminal && <div><span className="text-muted-foreground">Terminal:</span> <span className="text-foreground">{fetchedFlightData.terminal}</span></div>}
                     </div>
                   </div>
-                  
-                  {/* Onward Flight Details */}
-                  {selectedTransfer.flight_details?.flight_no && selectedTransfer.flight_details.flight_no !== 'XX000' && (
-                    <div className="ml-6 p-3 bg-muted/50 rounded border border-border">
-                      <h5 className="font-medium text-sm mb-2">Flight Details</h5>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <strong>Flight Number:</strong> {selectedTransfer.flight_details.flight_no}
-                        </div>
-                        <div>
-                          <strong>Departure Time:</strong> {selectedTransfer.flight_details?.departure_time ? new Date(selectedTransfer.flight_details.departure_time).toLocaleString() : 'N/A'}
-                        </div>
-                        <div>
-                          <strong>Airline:</strong> {selectedTransfer.flight_details?.airline || 'N/A'}
-                        </div>
-                        <div>
-                          <strong>Terminal:</strong> {selectedTransfer.flight_details?.terminal || 'N/A'}
-                        </div>
-                      </div>
-                    </div>
+                  <button
+                    onClick={handleSaveFlight}
+                    disabled={flightSaveLoading}
+                    className="w-full py-3 px-4 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors shadow-sm"
+                  >
+                    {flightSaveLoading ? 'Saving...' : 'Save to Transfer'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </Drawer>
+
+        {/* Transfer Details Drawer */}
+        <Drawer
+          isOpen={!!(showDetailsModal && selectedTransfer)}
+          onClose={() => { setShowDetailsModal(false); setSelectedTransfer(null) }}
+          title={selectedTransfer ? (() => {
+            const { companyName, clientName, travelerName } = getClientAndTravelerNames(selectedTransfer)
+            return companyName || clientName || 'Unknown Customer'
+          })() : ''}
+          subtitle={selectedTransfer ? (() => {
+            const { companyName, clientName, travelerName } = getClientAndTravelerNames(selectedTransfer)
+            return travelerName || (clientName && clientName !== 'N/A' ? clientName : null)
+          })() : null}
+          size="lg"
+          position="right"
+        >
+          {selectedTransfer && (() => {
+            const { companyName, clientName, travelerName } = getClientAndTravelerNames(selectedTransfer)
+            const hasReturn = selectedTransfer.return_transfer_details || selectedTransfer.return_flight_details
+            const status = selectedTransfer.transfer_details?.transfer_status || 'pending'
+            const { label: statusLabel, statusKey } = getTransferStatusDisplay(selectedTransfer)
+            return (
+              <div className="p-6 space-y-5">
+                {/* Status + Round Trip */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColor(statusKey)}`}>
+                    {statusLabel}
+                  </span>
+                  {hasReturn && (
+                    <span className="text-xs bg-blue-500/20 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded font-medium">Round Trip</span>
                   )}
                 </div>
 
-                {/* Return Transfer Section */}
-                {(selectedTransfer.return_transfer_details || selectedTransfer.return_flight_details) && (() => {
-                  const hasReturnTransfer = selectedTransfer.return_transfer_details || selectedTransfer.return_flight_details
-                  const hasReturnFlight = selectedTransfer.return_flight_details?.flight_no && 
-                    selectedTransfer.return_flight_details.flight_no !== 'XX000' && 
-                    selectedTransfer.return_flight_details.flight_no !== 'TBD'
-                  const isReturnFlightMissing = hasReturnTransfer && !hasReturnFlight
-                  const isReturnDepartureMissing = hasReturnTransfer && 
-                    (!selectedTransfer.return_transfer_details?.estimated_pickup_time || !selectedTransfer.return_flight_details?.departure_time)
+                {/* Onward Transfer */}
+                {(() => {
+                  const hasOnwardFlight = selectedTransfer.flight_details?.flight_no &&
+                    selectedTransfer.flight_details.flight_no !== 'XX000' &&
+                    selectedTransfer.flight_details.flight_no !== 'TBD'
+                  const isOnwardFlightMissing = !hasOnwardFlight
                   return (
-                  <div className="border-t border-border pt-4">
-                    <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
-                      <Plane size={16} className="text-muted-foreground rotate-180" />
-                      Return Transfer
-                      {(!selectedTransfer.return_flight_details?.flight_no || selectedTransfer.return_flight_details?.flight_no === 'XX000') && (
-                        <span className="ml-2 px-2 py-1 bg-red-100 dark:bg-red-900/60 text-red-800 dark:text-red-200 rounded text-xs">
-                          Flight Missing
-                        </span>
-                      )}
-                      {(!selectedTransfer.return_transfer_details?.estimated_pickup_time || !selectedTransfer.return_flight_details?.departure_time) && (
-                        <span className="ml-2 px-2 py-1 bg-orange-100 dark:bg-orange-900/60 text-orange-800 dark:text-orange-200 rounded text-xs">
-                          Departure Missing
-                        </span>
-                      )}
-                    </h4>
-                    <div className="grid grid-cols-2 gap-4 ml-6">
+                <div>
+                  <h4 className="font-medium text-foreground mb-3 flex items-center gap-2 flex-wrap">
+                    <Plane size={16} className="text-muted-foreground" />
+                    Onward
+                    {isOnwardFlightMissing && (
+                      <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/60 text-yellow-800 dark:text-yellow-200 rounded text-xs">Flight Detail Missing</span>
+                    )}
+                    {canAddUpdateFlight && (
+                      <span className="flex gap-1">
+                        {isOnwardFlightMissing ? (
+                          <button
+                            onClick={() => openFlightDrawer('onward')}
+                            className="px-2 py-1 text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                          >
+                            Add Flight
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => openFlightDrawer('onward', selectedTransfer.flight_details)}
+                            className="px-2 py-1 text-xs font-medium bg-muted text-foreground rounded hover:bg-muted/80"
+                          >
+                            Update Flight
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </h4>
+                  <div className="ml-6 pl-4 border-l-2 border-muted space-y-3">
+                    <div>
+                      <span className="text-muted-foreground text-sm">Route</span>
+                      <p className="font-medium text-foreground">{DEFAULT_AIRPORT} → {DEFAULT_HOTEL}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-sm">Pickup Time</span>
+                      <p className="font-medium text-foreground">
+                        {formatDateTimeFriendly(selectedTransfer.transfer_details?.estimated_pickup_time)}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-2">
                       <div>
-                        <strong>Pickup:</strong> {selectedTransfer.return_transfer_details?.pickup_location || 'TBD'}
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Vendor</p>
+                        <p className="font-medium text-foreground">
+                          {selectedTransfer.vendor_details?.vendor_name || <span className="italic text-muted-foreground">Not assigned</span>}
+                        </p>
                       </div>
                       <div>
-                        <strong>Drop:</strong> {selectedTransfer.return_transfer_details?.drop_location || 'TBD'}
-                      </div>
-                      <div>
-                        <strong>Pickup Time:</strong> {selectedTransfer.return_transfer_details?.estimated_pickup_time ? new Date(selectedTransfer.return_transfer_details.estimated_pickup_time).toLocaleString() : 'Missing'}
-                      </div>
-                      <div>
-                        <strong>Status:</strong> {selectedTransfer.return_transfer_details?.transfer_status || 'N/A'}
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Driver</p>
+                        <p className="font-medium text-foreground">
+                          {selectedTransfer.assigned_driver_details?.name || <span className="italic text-muted-foreground">Not assigned</span>}
+                        </p>
                       </div>
                     </div>
-                    
-                    {/* Return Flight Details */}
-                    {selectedTransfer.return_flight_details?.flight_no && selectedTransfer.return_flight_details.flight_no !== 'XX000' && (
-                      <div className="ml-6 p-3 bg-muted/50 rounded border border-border">
-                        <h5 className="font-medium text-sm mb-2">Return Flight Details</h5>
+                    {hasOnwardFlight && (
+                      <div className="p-3 bg-muted/50 rounded border border-border">
+                        <h5 className="font-medium text-sm mb-2">Flight</h5>
                         <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div>
-                            <strong>Flight Number:</strong> {selectedTransfer.return_flight_details.flight_no}
-                          </div>
-                          <div>
-                            <strong>Departure Time:</strong> {selectedTransfer.return_flight_details?.departure_time ? new Date(selectedTransfer.return_flight_details.departure_time).toLocaleString() : 'N/A'}
-                          </div>
-                          <div>
-                            <strong>Airline:</strong> {selectedTransfer.return_flight_details?.airline || 'N/A'}
-                          </div>
-                          <div>
-                            <strong>Terminal:</strong> {selectedTransfer.return_flight_details?.terminal || 'N/A'}
-                          </div>
+                          <div><strong>Flight:</strong> {selectedTransfer.flight_details.flight_no}</div>
+                          <div><strong>Airline:</strong> {selectedTransfer.flight_details?.airline || 'N/A'}</div>
+                          <div><strong>Departure:</strong> {formatDateTimeFriendly(selectedTransfer.flight_details?.departure_time) || 'N/A'}</div>
+                          <div><strong>Terminal:</strong> {selectedTransfer.flight_details?.terminal || 'N/A'}</div>
                         </div>
                       </div>
                     )}
-                    
-                    {/* Return specific warnings */}
-                    {isReturnFlightMissing && (
-                      <div className="ml-6 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded">
-                        <div className="flex items-center gap-2 text-sm text-red-700 dark:text-red-300">
-                          <AlertTriangle size={16} />
-                          <span>Return flight information is missing. Please add return flight details to complete the round-trip transfer.</span>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {isReturnDepartureMissing && (
-                      <div className="ml-6 p-3 bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded">
-                        <div className="flex items-center gap-2 text-sm text-orange-700 dark:text-orange-300">
-                          <AlertTriangle size={16} />
-                          <span>Return departure information is missing. Please add return transfer pickup time and location.</span>
-                        </div>
+                    {isOnwardFlightMissing && canAddUpdateFlight && (
+                      <div className="p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                        <AlertTriangle size={16} className="inline mr-2" />
+                        Click &quot;Add Flight&quot; above to add onward flight details
                       </div>
                     )}
                   </div>
+                </div>
                   )
                 })()}
 
-                {/* Vendor & Driver Assignment - highlighted when opened from Assigned */}
-                <div className="rounded-lg border border-border bg-muted/30 p-4">
-                  <h4 className="font-medium text-foreground mb-3 flex items-center gap-2">
-                    <Building2 size={16} className="text-muted-foreground" />
-                    Vendor & Driver Assignment
-                  </h4>
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Vendor</p>
-                      <p className="font-medium text-foreground">
-                        {selectedTransfer.vendor_details?.vendor_name || (
-                          <span className="text-muted-foreground italic">Not assigned</span>
-                        )}
-                      </p>
-                      {selectedTransfer.vendor_details?.email && (
-                        <p className="text-sm text-muted-foreground">{selectedTransfer.vendor_details.email}</p>
+                {/* Return Transfer */}
+                {(selectedTransfer.return_transfer_details || selectedTransfer.return_flight_details) && (() => {
+                  const hasReturnFlight = selectedTransfer.return_flight_details?.flight_no && 
+                    selectedTransfer.return_flight_details.flight_no !== 'XX000' && 
+                    selectedTransfer.return_flight_details.flight_no !== 'TBD'
+                  const isReturnFlightMissing = !hasReturnFlight
+                  const isReturnDepartureMissing = !selectedTransfer.return_transfer_details?.estimated_pickup_time || !selectedTransfer.return_flight_details?.departure_time
+                  return (
+                  <div className="border-t border-border pt-4">
+                    <h4 className="font-medium text-foreground mb-3 flex items-center gap-2 flex-wrap">
+                      <Plane size={16} className="text-muted-foreground rotate-180" />
+                      Return
+                      {isReturnFlightMissing && (
+                        <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/60 text-yellow-800 dark:text-yellow-200 rounded text-xs">Flight Detail Missing</span>
                       )}
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Driver</p>
-                      <p className="font-medium text-foreground">
-                        {selectedTransfer.assigned_driver_details?.name || (
-                          <span className="text-muted-foreground italic">Not assigned</span>
-                        )}
-                      </p>
-                      {(selectedTransfer.assigned_driver_details?.contact_number || selectedTransfer.assigned_driver_details?.vehicle_number) && (
-                        <p className="text-sm text-muted-foreground">
-                          {selectedTransfer.assigned_driver_details.contact_number}
-                          {selectedTransfer.assigned_driver_details.vehicle_number && ` · ${selectedTransfer.assigned_driver_details.vehicle_number}`}
+                      {isReturnDepartureMissing && (
+                        <span className="px-2 py-1 bg-orange-100 dark:bg-orange-900/60 text-orange-800 dark:text-orange-200 rounded text-xs">Departure Missing</span>
+                      )}
+                      {canAddUpdateFlight && (
+                        <span className="flex gap-1">
+                          {isReturnFlightMissing ? (
+                            <button
+                              onClick={() => openFlightDrawer('return')}
+                              className="px-2 py-1 text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                            >
+                              Add Flight
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => openFlightDrawer('return', selectedTransfer.return_flight_details)}
+                              className="px-2 py-1 text-xs font-medium bg-muted text-foreground rounded hover:bg-muted/80"
+                            >
+                              Update Flight
+                            </button>
+                          )}
+                        </span>
+                      )}
+                    </h4>
+                    <div className="ml-6 pl-4 border-l-2 border-muted space-y-3">
+                      <div>
+                        <span className="text-muted-foreground text-sm">Route</span>
+                        <p className="font-medium text-foreground">{DEFAULT_HOTEL} → {DEFAULT_AIRPORT}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground text-sm">Pickup Time</span>
+                        <p className="font-medium text-foreground">
+                          {formatDateTimeFriendly(selectedTransfer.return_transfer_details?.estimated_pickup_time)}
                         </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Vendor</p>
+                          <p className="font-medium text-foreground">
+                            {selectedTransfer.return_vendor_details?.vendor_name || selectedTransfer.vendor_details?.vendor_name || <span className="italic text-muted-foreground">Not assigned</span>}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Driver</p>
+                          <p className="font-medium text-foreground">
+                            {selectedTransfer.return_assigned_driver_details?.name || <span className="italic text-muted-foreground">Not assigned</span>}
+                          </p>
+                        </div>
+                      </div>
+                      {hasReturnFlight && (
+                        <div className="p-3 bg-muted/50 rounded border border-border">
+                          <h5 className="font-medium text-sm mb-2">Return Flight</h5>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div><strong>Flight:</strong> {selectedTransfer.return_flight_details.flight_no}</div>
+                            <div><strong>Airline:</strong> {selectedTransfer.return_flight_details?.airline || 'N/A'}</div>
+                            <div><strong>Departure:</strong> {formatDateTimeFriendly(selectedTransfer.return_flight_details?.departure_time) || 'N/A'}</div>
+                            <div><strong>Terminal:</strong> {selectedTransfer.return_flight_details?.terminal || 'N/A'}</div>
+                          </div>
+                        </div>
+                      )}
+                      {isReturnFlightMissing && canAddUpdateFlight && (
+                        <div className="p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded text-sm text-yellow-800 dark:text-yellow-200">
+                          <AlertTriangle size={16} className="inline mr-2" />
+                          Click &quot;Add Flight&quot; above to add return flight details
+                        </div>
                       )}
                     </div>
-                  </div>
-                </div>
+                    </div>
+                  )
+                })()}
+
               </div>
-              <div className="px-6 py-4 border-t border-border flex justify-end">
-                <button
-                  onClick={() => setShowDetailsModal(false)}
-                  className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 font-medium"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+            )
+          })()}
+        </Drawer>
       </div>
     </div>
   )

@@ -6,7 +6,7 @@ import { useApi } from '../hooks/useApi';
 import Drawer from './Drawer';
 import VendorDriverAssignment from './VendorDriverAssignment';
 import toast from 'react-hot-toast';
-import { getTransferDisplayName } from '../utils/transferUtils';
+import { getTransferDisplayName, getClientAndTravelerNames } from '../utils/transferUtils';
 
 const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
   const { isDark } = useTheme();
@@ -73,12 +73,15 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
 
   const transferStatus = transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'pending';
 
+  const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer);
+  const subtitleText = travelerName || (clientName && clientName !== 'N/A' ? clientName : null);
+
   return (
     <Drawer
       isOpen={true}
       onClose={onClose}
-      title="Transfer Details"
-      subtitle={`${getTransferDisplayName(transfer)}${transfer._id && getTransferDisplayName(transfer) !== transfer._id ? ` (${transfer._id})` : ''}`}
+      title={companyName || clientName || 'Unknown Customer'}
+      subtitle={subtitleText}
       position="right"
       size="lg"
     >

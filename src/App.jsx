@@ -38,13 +38,16 @@ const TravelAdvisoryRoute = () => {
 
 const FlightsRoute = () => {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { isFeatureEnabled } = useFeatures()
+  const isClientOrAdmin = ['SUPER_ADMIN', 'ADMIN', 'CLIENT'].includes(user?.role)
+  const canAccessFlights = isClientOrAdmin || isFeatureEnabled(FEATURE_KEYS.FLIGHTS)
   useEffect(() => {
-    if (!isFeatureEnabled(FEATURE_KEYS.FLIGHTS)) {
+    if (!canAccessFlights) {
       navigate('/transfers', { replace: true })
     }
-  }, [isFeatureEnabled, navigate])
-  if (!isFeatureEnabled(FEATURE_KEYS.FLIGHTS)) return null
+  }, [canAccessFlights, navigate])
+  if (!canAccessFlights) return null
   return <Flights />
 }
 

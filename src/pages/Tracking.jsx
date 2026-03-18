@@ -1,19 +1,31 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MapPin, Clock, User, Car, Navigation, CheckCircle, Circle, AlertCircle, Plane, ChevronDown, Building2 } from 'lucide-react';
-import LiveMap from '../components/LiveMap';
+// import LiveMap from '../components/LiveMap'; // Commented out for now
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
+import { getClientAndTravelerNames, getTransferStatusDisplay, getLegStatusDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatTimeFriendly } from '../utils/transferUtils';
+import Dropdown from '../components/Dropdown';
+
+const SEARCH_TYPE_APEX = 'apex';
+const SEARCH_TYPE_COMPANY_TRAVELER = 'company_traveler';
 
 const Tracking = () => {
   const { isDark } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [searchType, setSearchType] = useState(() => localStorage.getItem('tracking_search_type') || SEARCH_TYPE_APEX);
   // Load search state from localStorage on mount, or from URL id param
   const [trackingId, setTrackingId] = useState(() => {
     const urlId = searchParams.get('id')
     if (urlId) return urlId
     return localStorage.getItem('tracking_search_id') || '';
   });
+  const [companyName, setCompanyName] = useState(() => localStorage.getItem('tracking_search_company') || '');
+  const [travelerName, setTravelerName] = useState(() => localStorage.getItem('tracking_search_traveler') || '');
+  const [companies, setCompanies] = useState([]);
+  const [travelers, setTravelers] = useState([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
+  const [loadingTravelers, setLoadingTravelers] = useState(false);
   const [transfer, setTransfer] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState(null);
@@ -26,7 +38,7 @@ const Tracking = () => {
   const [accordions, setAccordions] = useState({
     transferDetails: true,
     trackingProgress: true,
-    liveMap: true
+    liveMap: false // Commented out live map for now
   });
 
   const toggleAccordion = (key) => {
@@ -44,6 +56,65 @@ const Tracking = () => {
       localStorage.removeItem('tracking_search_id');
     }
   }, [trackingId]);
+  useEffect(() => {
+    localStorage.setItem('tracking_search_type', searchType);
+  }, [searchType]);
+  useEffect(() => {
+    if (companyName) localStorage.setItem('tracking_search_company', companyName);
+    else localStorage.removeItem('tracking_search_company');
+  }, [companyName]);
+  useEffect(() => {
+    if (travelerName) localStorage.setItem('tracking_search_traveler', travelerName);
+    else localStorage.removeItem('tracking_search_traveler');
+  }, [travelerName]);
+
+  // Fetch companies when Company & Traveler mode is selected
+  useEffect(() => {
+    if (searchType !== SEARCH_TYPE_COMPANY_TRAVELER) return;
+    const fetchCompanies = async () => {
+      setLoadingCompanies(true);
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+        const res = await fetch(`${API_BASE_URL}/tracking/companies`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) setCompanies(data.data);
+        else setCompanies([]);
+      } catch (e) {
+        console.error('Failed to fetch companies:', e);
+        setCompanies([]);
+      } finally {
+        setLoadingCompanies(false);
+      }
+    };
+    fetchCompanies();
+  }, [searchType]);
+
+  // Fetch travelers when company is selected
+  useEffect(() => {
+    if (searchType !== SEARCH_TYPE_COMPANY_TRAVELER || !companyName?.trim()) {
+      setTravelers([]);
+      setTravelerName('');
+      return;
+    }
+    const fetchTravelers = async () => {
+      setLoadingTravelers(true);
+      setTravelerName('');
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+        const params = new URLSearchParams({ company: companyName.trim() });
+        const res = await fetch(`${API_BASE_URL}/tracking/travelers?${params}`);
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) setTravelers(data.data);
+        else setTravelers([]);
+      } catch (e) {
+        console.error('Failed to fetch travelers:', e);
+        setTravelers([]);
+      } finally {
+        setLoadingTravelers(false);
+      }
+    };
+    fetchTravelers();
+  }, [searchType, companyName]);
 
   // Build tracking steps: Transfer Requested → Driver Assigned → Transfer Started → Arrival Completed → [Return: Departure Driver → Departure Completed] → Transfer Completed
   const buildTrackingStepsFromTransfer = (t) => {
@@ -160,8 +231,67 @@ const Tracking = () => {
     };
   }, [locationUpdateInterval]);
 
+  const applyTransferData = useCallback((data) => {
+    setTransfer(data);
+    if (data.tracking?.driverLocation) {
+      setDriverLocation({
+        lat: data.tracking.driverLocation.latitude,
+        lng: data.tracking.driverLocation.longitude,
+        address: data.tracking.driverLocation.address || '',
+        timestamp: data.tracking.driverLocation.timestamp
+      });
+    } else {
+      setDriverLocation(null);
+    }
+    if (data.tracking?.estimatedArrival) {
+      setEstimatedArrival(new Date(data.tracking.estimatedArrival));
+    } else {
+      setEstimatedArrival(null);
+    }
+    if (data.tracking?.progressSteps?.length > 0) {
+      setTrackingSteps(data.tracking.progressSteps);
+    } else {
+      setTrackingSteps(buildTrackingStepsFromTransfer(data));
+    }
+  }, []);
+
   const handleTrackTransfer = useCallback(async (overrideId) => {
-    const idToSearch = (overrideId ?? trackingId)?.trim?.() || trackingId?.trim?.()
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+    const token = localStorage.getItem('token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    if (searchType === SEARCH_TYPE_COMPANY_TRAVELER) {
+      const company = companyName?.trim?.();
+      const traveler = travelerName?.trim?.();
+      if (!company || !traveler) {
+        toast.error('Please enter both company name and traveler name');
+        return;
+      }
+      setLoading(true);
+      setSearchError(null);
+      try {
+        const params = new URLSearchParams({ company, traveler });
+        const response = await fetch(`${API_BASE_URL}/tracking/search?${params}`, { headers });
+        const data = await response.json();
+        if (data.success) {
+          applyTransferData(data.data);
+          toast.success(data.matchesCount > 1 ? `Transfer found! (${data.matchesCount} matches, showing most recent)` : 'Transfer found!');
+        } else {
+          setSearchError(data.message || 'No transfer found for this company and traveler.');
+          setTransfer(null);
+        }
+      } catch (error) {
+        console.error('Error searching transfer:', error);
+        setSearchError('Unable to connect. Please check your internet connection and try again.');
+        setTransfer(null);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    const idToSearch = (overrideId ?? trackingId)?.trim?.() || trackingId?.trim?.();
     if (!idToSearch) {
       toast.error('Please enter a tracking ID');
       return;
@@ -170,48 +300,11 @@ const Tracking = () => {
     setLoading(true);
     setSearchError(null);
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
-      const token = localStorage.getItem('token');
-      
-      const headers = {
-        'Content-Type': 'application/json'
-      };
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
       const response = await fetch(`${API_BASE_URL}/tracking/${idToSearch}`, { headers });
       const data = await response.json();
 
       if (data.success) {
-        // Store full transfer data including tracking
-        setTransfer(data.data);
-        
-        // Use tracking data from API
-        if (data.data.tracking) {
-          if (data.data.tracking.driverLocation) {
-            setDriverLocation({
-              lat: data.data.tracking.driverLocation.latitude,
-              lng: data.data.tracking.driverLocation.longitude,
-              address: data.data.tracking.driverLocation.address || '',
-              timestamp: data.data.tracking.driverLocation.timestamp
-            });
-          }
-          
-          if (data.data.tracking.estimatedArrival) {
-            setEstimatedArrival(new Date(data.data.tracking.estimatedArrival));
-          }
-          
-          if (data.data.tracking.progressSteps && data.data.tracking.progressSteps.length > 0) {
-            setTrackingSteps(data.data.tracking.progressSteps);
-          } else {
-            setTrackingSteps(buildTrackingStepsFromTransfer(data.data));
-          }
-        } else {
-          setTrackingSteps(buildTrackingStepsFromTransfer(data.data));
-        }
-        
+        applyTransferData(data.data);
         toast.success('Transfer found!');
       } else {
         const errorMsg = data.message || 'Transfer not found. Please check your ID or name and try again.';
@@ -225,7 +318,7 @@ const Tracking = () => {
     } finally {
       setLoading(false);
     }
-  }, [trackingId]);
+  }, [trackingId, searchType, companyName, travelerName, applyTransferData]);
 
   // When arriving with ?id= in URL, prefill search and auto-fetch
   useEffect(() => {
@@ -304,15 +397,8 @@ const Tracking = () => {
     }
   };
 
-  const formatTime = (date) => {
-    return date ? new Date(date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : null;
-  };
-
-  const formatDateTime = (date) => {
-    if (!date) return null;
-    const d = new Date(date);
-    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-  };
+  const formatTime = (date) => date ? formatTimeFriendly(date) : null;
+  const formatDateTime = (date) => date ? formatDateTimeFriendly(date) : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -323,61 +409,159 @@ const Tracking = () => {
             Track Your Transfer
           </h1>
           <p className="text-gray-500 dark:text-gray-400 text-base">
-            Track your transfer using your Apex ID or name
+            Track your transfer using your Apex ID, name, or company and traveler
           </p>
         </div>
 
       {/* Search Section */}
       <div className="bg-card rounded-xl p-4 md:p-6 shadow-sm border border-border mb-6 md:mb-8">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col md:flex-row gap-3">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              Transfer ID or Name
-            </label>
-            <input
-              type="text"
-              value={trackingId}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSearchError(null);
-                // Auto-uppercase only if it looks like an APX ID
-                if (value.match(/^APX\d*$/i)) {
-                  setTrackingId(value.toUpperCase());
-                } else {
-                  setTrackingId(value);
-                }
-              }}
-              placeholder="Enter your Apex ID (e.g., APX123456) or your name"
-              className="w-full px-4 py-3 border border-input rounded-lg text-base outline-none transition-colors bg-background text-foreground focus:ring-2 focus:ring-ring"
-              onKeyPress={(e) => e.key === 'Enter' && handleTrackTransfer()}
-              autoFocus
-            />
+          {/* Search type toggle */}
+          <div className="flex gap-2 mb-1">
+            <button
+              type="button"
+              onClick={() => { setSearchType(SEARCH_TYPE_APEX); setSearchError(null); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                searchType === SEARCH_TYPE_APEX
+                  ? 'bg-primary text-white'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              Apex ID or Name
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSearchType(SEARCH_TYPE_COMPANY_TRAVELER); setSearchError(null); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                searchType === SEARCH_TYPE_COMPANY_TRAVELER
+                  ? 'bg-primary text-white'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              <Building2 size={16} />
+              Company & Traveler
+            </button>
           </div>
-          <button
-            onClick={handleTrackTransfer}
-            disabled={loading || !trackingId.trim()}
-              className={`w-full md:w-auto md:self-end px-6 py-3 border-none rounded-lg text-base font-medium text-white flex items-center justify-center gap-2 transition-all flex-shrink-0 ${
-              loading || !trackingId.trim()
-                ? 'bg-muted cursor-not-allowed' 
-                : 'bg-primary hover:bg-primary/90 cursor-pointer'
-            }`}
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-transparent border-t-white rounded-full animate-spin" />
-                Tracking...
-              </>
-            ) : (
-              <>
-                <Navigation size={16} />
-                Track Transfer
-              </>
-            )}
-          </button>
-          </div>
+
+          {searchType === SEARCH_TYPE_APEX ? (
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-foreground mb-1.5">
+                  Transfer ID or Name
+                </label>
+                <input
+                  type="text"
+                  value={trackingId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSearchError(null);
+                    if (value.match(/^APX\d*$/i)) {
+                      setTrackingId(value.toUpperCase());
+                    } else {
+                      setTrackingId(value);
+                    }
+                  }}
+                  placeholder="Enter your Apex ID (e.g., APX123456) or your name"
+                  className="w-full px-4 py-3 border border-input rounded-lg text-base outline-none transition-colors bg-background text-foreground focus:ring-2 focus:ring-ring"
+                  onKeyPress={(e) => e.key === 'Enter' && handleTrackTransfer()}
+                  autoFocus
+                />
+              </div>
+              <button
+                onClick={handleTrackTransfer}
+                disabled={loading || !trackingId.trim()}
+                className={`w-full md:w-auto md:self-end px-6 py-3 border-none rounded-lg text-base font-medium text-white flex items-center justify-center gap-2 transition-all flex-shrink-0 ${
+                  loading || !trackingId.trim()
+                    ? 'bg-muted cursor-not-allowed'
+                    : 'bg-primary hover:bg-primary/90 cursor-pointer'
+                }`}
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-transparent border-t-white rounded-full animate-spin" />
+                    Tracking...
+                  </>
+                ) : (
+                  <>
+                    <Navigation size={16} />
+                    Track Transfer
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">
+                    Company name
+                  </label>
+                  <Dropdown
+                    value={companyName}
+                    onChange={(e) => { setCompanyName(e.target.value); setSearchError(null); }}
+                    options={[
+                      { value: '', label: loadingCompanies ? 'Loading companies...' : 'Select company...' },
+                      ...companies.map(c => ({ value: c, label: c }))
+                    ]}
+                    placeholder={loadingCompanies ? 'Loading...' : 'Select company'}
+                    minWidth="100%"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">
+                    Traveler name
+                  </label>
+                  <Dropdown
+                    value={travelerName}
+                    onChange={(e) => { setTravelerName(e.target.value); setSearchError(null); }}
+                    options={[
+                      {
+                        value: '',
+                        label: !companyName
+                          ? 'Select company first'
+                          : loadingTravelers
+                            ? 'Loading travelers...'
+                            : travelers.length === 0
+                              ? 'No travelers found for this company'
+                              : 'Select traveler...'
+                      },
+                      ...travelers.map(t => ({ value: t, label: t }))
+                    ]}
+                    placeholder={!companyName ? 'Select company first' : (loadingTravelers ? 'Loading...' : 'Select traveler')}
+                    minWidth="100%"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={handleTrackTransfer}
+                  disabled={loading || !companyName.trim() || !travelerName.trim()}
+                  className={`px-6 py-3 border-none rounded-lg text-base font-medium text-white flex items-center justify-center gap-2 transition-all ${
+                    loading || !companyName.trim() || !travelerName.trim()
+                      ? 'bg-muted cursor-not-allowed'
+                      : 'bg-primary hover:bg-primary/90 cursor-pointer'
+                  }`}
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-transparent border-t-white rounded-full animate-spin" />
+                      Tracking...
+                    </>
+                  ) : (
+                    <>
+                      <Navigation size={16} />
+                      Track Transfer
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           <p className="text-xs text-muted-foreground">
-            Enter your Apex ID (e.g., APX123456) or your name as it appears in your booking
+            {searchType === SEARCH_TYPE_APEX
+              ? 'Enter your Apex ID (e.g., APX123456) or your name as it appears in your booking'
+              : 'Enter your company name first, then the traveler name as it appears in your booking'}
           </p>
 
           {searchError && (
@@ -387,7 +571,9 @@ const Tracking = () => {
                 <p className="text-sm font-medium text-amber-800 dark:text-amber-200">We couldn't find your transfer</p>
                 <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">{searchError}</p>
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
-                  • Use your Apex ID (e.g. APX12345) or full name exactly as on your confirmation
+                  {searchType === SEARCH_TYPE_COMPANY_TRAVELER
+                    ? '• Use company and traveler names exactly as on your confirmation'
+                    : '• Use your Apex ID (e.g. APX12345) or full name exactly as on your confirmation'}
                 </p>
                 <p className="text-xs text-amber-600 dark:text-amber-400">
                   • Check for typos or extra spaces
@@ -427,25 +613,35 @@ const Tracking = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-5">
                   {/* Left column: Status, Trip, Flight, Traveler, Times */}
                   <div className="lg:col-span-2 space-y-5">
-                    {/* Status + Reference ID */}
+                    {/* Status + Company & Traveler */}
                     {(() => {
                       const status = transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'pending';
+                      const { label: statusLabel, statusKey, description } = getTransferStatusDisplay(transfer);
+                      const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer);
+                      const hasReturn = !!(transfer.return_transfer_details || transfer.return_flight_details);
                       return (
-                        <div className={`${getStatusBg(status)} border rounded-xl p-4 flex items-center justify-between gap-4`}>
+                        <div className={`${getStatusBg(statusKey)} border rounded-xl p-4 flex items-center justify-between gap-4`}>
                           <div className="flex items-center gap-3 min-w-0">
-                            {getStatusIcon(status)}
+                            {getStatusIcon(statusKey)}
                             <div className="min-w-0">
-                              <div className={`text-lg font-semibold capitalize ${getStatusColor(status)}`}>
-                                {String(status).replace(/_/g, ' ')}
+                              <div className={`text-lg font-semibold ${getStatusColor(statusKey)}`}>
+                                {statusLabel}
                               </div>
                               <div className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">
-                                {getStatusDescription(status)}
+                                {description}
                               </div>
                             </div>
                           </div>
                           <div className="flex-shrink-0 text-right pl-2 border-l border-border dark:border-gray-600">
-                            <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Reference</div>
-                            <div className="text-sm font-mono font-semibold text-gray-900 dark:text-gray-100 mt-0.5">{transfer._id}</div>
+                            <div className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                              {companyName || clientName || 'Unknown Customer'}
+                            </div>
+                            {travelerName && (
+                              <div className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">{travelerName}</div>
+                            )}
+                            {hasReturn && (
+                              <span className="inline-block mt-1 text-xs bg-blue-500/20 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded font-medium">Round Trip</span>
+                            )}
                           </div>
                         </div>
                       );
@@ -460,7 +656,7 @@ const Tracking = () => {
                         </div>
                         <div className="min-w-0">
                           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Pickup</div>
-                          <p className="text-base font-medium text-foreground">{transfer.transfer_details?.pickup_location || '—'}</p>
+                          <p className="text-base font-medium text-foreground">{DEFAULT_AIRPORT}</p>
                         </div>
                       </div>
                       <div className="ml-4 border-l-2 border-border pl-5 py-1">
@@ -472,7 +668,17 @@ const Tracking = () => {
                         </div>
                         <div className="min-w-0">
                           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Drop-off</div>
-                          <p className="text-base font-medium text-foreground">{transfer.transfer_details?.drop_location === 'TBD' || !transfer.transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.transfer_details?.drop_location || '—')}</p>
+                          <p className="text-base font-medium text-foreground">{DEFAULT_HOTEL}</p>
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-border grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-xs text-muted-foreground">Vendor</span>
+                          <p className="text-sm font-medium text-foreground">{transfer.vendor_details?.vendor_name || 'Not assigned'}</p>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground">Driver</span>
+                          <p className="text-sm font-medium text-foreground">{transfer.assigned_driver_details?.name || transfer.assigned_driver_details?.driver_name || 'Not assigned'}</p>
                         </div>
                       </div>
                       {(transfer.transfer_details?.event_place && transfer.transfer_details.event_place !== 'Event (TBD)') && (
@@ -490,7 +696,7 @@ const Tracking = () => {
                     </div>
 
                     {/* Return Trip (when available) */}
-                    {(transfer.return_transfer_details) && (
+                    {(transfer.return_transfer_details || transfer.return_flight_details) && (
                       <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-4">
                         <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground">Return Trip</h3>
                         <div className="flex items-start gap-3">
@@ -499,7 +705,7 @@ const Tracking = () => {
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Pickup</div>
-                            <p className="text-base font-medium text-foreground">{transfer.return_transfer_details?.pickup_location || '—'}</p>
+                            <p className="text-base font-medium text-foreground">{DEFAULT_HOTEL}</p>
                           </div>
                         </div>
                         <div className="ml-4 border-l-2 border-border pl-5 py-1">
@@ -511,7 +717,17 @@ const Tracking = () => {
                           </div>
                           <div className="min-w-0">
                             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Drop-off</div>
-                            <p className="text-base font-medium text-foreground">{transfer.return_transfer_details?.drop_location === 'TBD' || !transfer.return_transfer_details?.drop_location ? 'Grand Hyatt' : (transfer.return_transfer_details?.drop_location || '—')}</p>
+                            <p className="text-base font-medium text-foreground">{DEFAULT_AIRPORT}</p>
+                          </div>
+                        </div>
+                        <div className="pt-2 border-t border-border grid grid-cols-2 gap-4">
+                          <div>
+                            <span className="text-xs text-muted-foreground">Vendor</span>
+                            <p className="text-sm font-medium text-foreground">{transfer.return_vendor_details?.vendor_name || transfer.vendor_details?.vendor_name || 'Not assigned'}</p>
+                          </div>
+                          <div>
+                            <span className="text-xs text-muted-foreground">Driver</span>
+                            <p className="text-sm font-medium text-foreground">{transfer.return_assigned_driver_details?.name || transfer.return_assigned_driver_details?.driver_name || 'Not assigned'}</p>
                           </div>
                         </div>
                         {transfer.return_transfer_details?.estimated_pickup_time && (
@@ -522,14 +738,17 @@ const Tracking = () => {
                             </p>
                           </div>
                         )}
-                        {transfer.return_transfer_details?.transfer_status && (
-                          <div className="pt-2 border-t border-border">
-                            <span className="text-xs text-muted-foreground">Return status</span>
-                            <p className={`text-sm font-medium capitalize ${getStatusColor(transfer.return_transfer_details.transfer_status)}`}>
-                              {String(transfer.return_transfer_details.transfer_status).replace(/_/g, ' ')}
-                            </p>
-                          </div>
-                        )}
+                        {transfer.return_transfer_details && (() => {
+                          const { label: returnStatusLabel, statusKey: returnStatusKey } = getLegStatusDisplay(transfer, 'return');
+                          return (
+                            <div className="pt-2 border-t border-border">
+                              <span className="text-xs text-muted-foreground">Return status</span>
+                              <p className={`text-sm font-medium ${getStatusColor(returnStatusKey)}`}>
+                                {returnStatusLabel}
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
 
@@ -630,9 +849,17 @@ const Tracking = () => {
                           <User size={16} /> Traveler
                         </h3>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {(transfer.customer_details?.company_name || transfer.traveler_details?.company_name) && (
+                            <div>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Company</span>
+                              <p className="text-base font-medium text-foreground">
+                                {transfer.customer_details?.company_name || transfer.traveler_details?.company_name}
+                              </p>
+                            </div>
+                          )}
                           {(transfer.customer_details?.name || transfer.traveler_details?.name) && (
                             <div>
-                              <span className="text-xs text-muted-foreground block mb-0.5">Name</span>
+                              <span className="text-xs text-muted-foreground block mb-0.5">Traveler</span>
                               <p className="text-base font-medium text-foreground">
                                 {transfer.customer_details?.name || transfer.traveler_details?.name}
                               </p>
@@ -678,32 +905,12 @@ const Tracking = () => {
                               </a>
                             </div>
                           )}
-                          {(transfer.customer_details?.company_name || transfer.traveler_details?.company_name) && (
-                            <div>
-                              <span className="text-xs text-muted-foreground block mb-0.5">Company</span>
-                              <p className="text-base font-medium text-foreground">
-                                {transfer.customer_details?.company_name || transfer.traveler_details?.company_name}
-                              </p>
-                            </div>
-                          )}
                           {(transfer.customer_details?.job_position || transfer.traveler_details?.job_position) && (
                             <div>
                               <span className="text-xs text-muted-foreground block mb-0.5">Job position</span>
                               <p className="text-base font-medium text-foreground">
                                 {transfer.customer_details?.job_position || transfer.traveler_details?.job_position}
                               </p>
-                            </div>
-                          )}
-                          {(transfer.customer_details?.no_of_passengers != null) && (
-                            <div>
-                              <span className="text-xs text-muted-foreground block mb-0.5">Passengers</span>
-                              <p className="text-base font-medium text-foreground">{transfer.customer_details.no_of_passengers}</p>
-                            </div>
-                          )}
-                          {(transfer.customer_details?.luggage_count != null) && (
-                            <div>
-                              <span className="text-xs text-muted-foreground block mb-0.5">Luggage</span>
-                              <p className="text-base font-medium text-foreground">{transfer.customer_details.luggage_count}</p>
                             </div>
                           )}
                         </div>
@@ -734,75 +941,66 @@ const Tracking = () => {
                     )}
                   </div>
 
-                  {/* Right column: Vendor & Driver */}
+                  {/* Right column: Onward & Return Vendor & Driver */}
                   <div className="lg:col-span-1 space-y-4">
-                    {transfer.vendor_details && (
-                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4">
-                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-3">
-                          <Building2 size={16} /> Vendor
-                        </h3>
-                        <div className="space-y-2">
-                          <p className="text-base font-medium text-foreground">{transfer.vendor_details.vendor_name}</p>
-                          {transfer.vendor_details.contact_person && (
-                            <p className="text-sm text-muted-foreground">{transfer.vendor_details.contact_person}</p>
+                    {/* Onward Vendor & Driver */}
+                    <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4">
+                      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-3">
+                        <Plane size={14} /> Onward
+                      </h3>
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-xs text-muted-foreground block mb-0.5">Vendor</span>
+                          <p className="text-base font-medium text-foreground">{transfer.vendor_details?.vendor_name || 'Not assigned'}</p>
+                          {transfer.vendor_details?.contact_number && (
+                            <a href={`tel:${transfer.vendor_details.contact_number}`} className="text-sm text-primary hover:underline block">{transfer.vendor_details.contact_number}</a>
                           )}
-                          {transfer.vendor_details.contact_number && (
-                            <a href={`tel:${transfer.vendor_details.contact_number}`} className="text-sm text-primary hover:underline block">
-                              {transfer.vendor_details.contact_number}
-                            </a>
-                          )}
-                          {transfer.vendor_details.email && (
-                            <a href={`mailto:${transfer.vendor_details.email}`} className="text-sm text-primary hover:underline block">
-                              {transfer.vendor_details.email}
-                            </a>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground block mb-0.5">Driver</span>
+                          {transfer.assigned_driver_details ? (
+                            <>
+                              <p className="text-base font-medium text-foreground">{transfer.assigned_driver_details.driver_name || transfer.assigned_driver_details.name || 'N/A'}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {transfer.assigned_driver_details.vehicle_type || 'N/A'}
+                                {transfer.assigned_driver_details.vehicle_number && ` · ${transfer.assigned_driver_details.vehicle_number}`}
+                              </p>
+                              {(transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number) && (
+                                <a href={`tel:${transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number}`} className="text-sm text-primary hover:underline block">
+                                  {transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number}
+                                </a>
+                              )}
+                              {driverLocation?.address && (
+                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                  <Navigation size={12} /> {driverLocation.address}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">Not assigned</p>
                           )}
                         </div>
                       </div>
-                    )}
-                    {transfer.assigned_driver_details ? (
+                    </div>
+                    {/* Return Vendor & Driver */}
+                    {(transfer.return_transfer_details || transfer.return_flight_details) && (
                       <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 sticky top-4">
-                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-4">
-                          <Car size={16} /> Driver
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2 mb-3">
+                          <Plane size={14} className="rotate-180" /> Return
                         </h3>
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                           <div>
-                            <span className="text-xs text-muted-foreground block mb-0.5">Name</span>
-                            <p className="text-base font-medium text-foreground">
-                              {transfer.assigned_driver_details.driver_name || transfer.assigned_driver_details.name || 'N/A'}
-                            </p>
+                            <span className="text-xs text-muted-foreground block mb-0.5">Vendor</span>
+                            <p className="text-base font-medium text-foreground">{transfer.return_vendor_details?.vendor_name || transfer.vendor_details?.vendor_name || 'Not assigned'}</p>
                           </div>
                           <div>
-                            <span className="text-xs text-muted-foreground block mb-0.5">Vehicle</span>
-                            <p className="text-base text-foreground">
-                              {transfer.assigned_driver_details.vehicle_type || 'N/A'}
-                              {transfer.assigned_driver_details.vehicle_number && ` · ${transfer.assigned_driver_details.vehicle_number}`}
-                            </p>
+                            <span className="text-xs text-muted-foreground block mb-0.5">Driver</span>
+                            <p className="text-base font-medium text-foreground">{transfer.return_assigned_driver_details?.name || transfer.return_assigned_driver_details?.driver_name || 'Not assigned'}</p>
+                            {transfer.return_assigned_driver_details?.vehicle_number && (
+                              <p className="text-sm text-muted-foreground">{transfer.return_assigned_driver_details.vehicle_number}</p>
+                            )}
                           </div>
-                          {(transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number) && (
-                            <div>
-                              <span className="text-xs text-muted-foreground block mb-0.5">Contact</span>
-                              <a
-                                href={`tel:${transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number}`}
-                                className="text-base text-primary font-medium hover:underline"
-                              >
-                                {transfer.assigned_driver_details.driver_phone || transfer.assigned_driver_details.contact_number}
-                              </a>
-                            </div>
-                          )}
-                          {driverLocation?.address && (
-                            <div>
-                              <span className="text-xs text-muted-foreground block mb-0.5 flex items-center gap-1">
-                                <Navigation size={12} /> Current location
-                              </span>
-                              <p className="text-sm text-foreground">{driverLocation.address}</p>
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-border bg-muted/10 p-4 text-center">
-                        <Car size={24} className="mx-auto text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground">Driver not assigned yet</p>
                       </div>
                     )}
                   </div>
@@ -882,8 +1080,8 @@ const Tracking = () => {
                 className="w-full px-6 py-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
               >
                 <h2 className="text-xl font-semibold text-foreground">
-            Live Map
-          </h2>
+                  Live Map (Disabled)
+                </h2>
                 <ChevronDown
                   size={20}
                   className={`text-muted-foreground transition-transform duration-200 ${
@@ -893,12 +1091,25 @@ const Tracking = () => {
               </button>
               {accordions.liveMap && (
                 <div className="px-6 pb-6 border-t border-border pt-5">
-          <LiveMap
-            transfer={transfer}
-            driverLocation={driverLocation}
-            estimatedArrival={estimatedArrival}
-            routeHistory={transfer?.tracking?.routeHistory || []}
-          />
+                  {/* Live Map component commented out */}
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 text-center">
+                    <div className="text-amber-600 dark:text-amber-400 mb-2">
+                      <MapPin size={24} className="mx-auto" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-amber-800 dark:text-amber-200 mb-2">Live Map Temporarily Disabled</h3>
+                    <p className="text-amber-700 dark:text-amber-300 text-sm">
+                      The live map feature has been temporarily disabled for maintenance.
+                    </p>
+                    <p className="text-amber-600 dark:text-amber-400 text-xs mt-2">
+                      You can still track your transfer status using the progress indicators above.
+                    </p>
+                  </div>
+                  {/* <LiveMap
+                    transfer={transfer}
+                    driverLocation={driverLocation}
+                    estimatedArrival={estimatedArrival}
+                    routeHistory={trackingSteps}
+                  /> */}
                 </div>
               )}
             </div>
