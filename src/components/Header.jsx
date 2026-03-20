@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, Bell, User, ChevronDown, Settings, LogOut, Zap, Moon, Sun, Truck, UserPlus, FileText } from 'lucide-react'
+import { Menu, Bell, User, ChevronDown, Settings, LogOut, Zap, Moon, Sun, Truck, UserPlus, FileText, MessageCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useChat } from '../contexts/ChatContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { inAppNotificationApi } from '../services/notificationService'
 
 const Header = ({ onMenuClick }) => {
+  const { setOpen: openChat } = useChat()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
@@ -154,6 +156,18 @@ const Header = ({ onMenuClick }) => {
 
       {/* Right side */}
       <div className="flex items-center gap-4">
+        {/* HALO AI Chat - in navbar to avoid blocking pagination */}
+        {user && (
+          <button
+            onClick={() => openChat(true)}
+            className="p-2 rounded-md border-none bg-transparent cursor-pointer hover:bg-accent transition-colors"
+            title="HALO AI Chat"
+            aria-label="Open HALO AI"
+          >
+            <MessageCircle size={20} className="text-muted-foreground" />
+          </button>
+        )}
+
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}

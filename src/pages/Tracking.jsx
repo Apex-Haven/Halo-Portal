@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { MapPin, Clock, User, Car, Navigation, CheckCircle, Circle, AlertCircle, Plane, ChevronDown, Building2 } from 'lucide-react';
+import { MapPin, Clock, User, Car, Navigation, CheckCircle, Circle, AlertCircle, Plane, ChevronDown, Building2, Users } from 'lucide-react';
 // import LiveMap from '../components/LiveMap'; // Commented out for now
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
@@ -913,6 +913,42 @@ const Tracking = () => {
                               </p>
                             </div>
                           )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Travelers in same car */}
+                    {(() => {
+                      const { travelerName } = getClientAndTravelerNames(transfer);
+                      const hasDelegates = transfer.delegates && transfer.delegates.length > 0;
+                      return travelerName || hasDelegates;
+                    })() && (
+                      <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-3">
+                        <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+                          <Users size={16} /> Travelers in same car
+                        </h3>
+                        <div className="text-sm text-foreground space-y-1">
+                          {(() => {
+                            const { travelerName } = getClientAndTravelerNames(transfer);
+                            return travelerName ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">•</span>
+                                <span>{travelerName}</span>
+                                <span className="text-xs text-muted-foreground">(primary)</span>
+                              </div>
+                            ) : null;
+                          })()}
+                          {(transfer.delegates || []).map((d, i) => {
+                            const name = d.traveler_id?.profile
+                              ? [d.traveler_id.profile.firstName, d.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
+                              : d.travelerName || d.traveler_id?.email || 'Traveler';
+                            return (
+                              <div key={i} className="flex items-center gap-2">
+                                <span className="text-muted-foreground">•</span>
+                                <span>{name}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

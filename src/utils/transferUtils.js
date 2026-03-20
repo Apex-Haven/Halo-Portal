@@ -199,7 +199,15 @@ export const getClientAndTravelerNames = (transfer) => {
   const rawName = transfer.customer_details?.name || 'N/A';
   const salutation = transfer.customer_details?.salutation?.trim();
   const clientName = salutation ? `${salutation} ${rawName}`.trim() : rawName;
-  const travelerName = transfer.traveler_details?.name || null;
+  // Primary traveler: traveler_details.name or traveler_id (populated User)
+  const travelerName =
+    transfer.traveler_details?.name ||
+    (transfer.traveler_id?.profile
+      ? [transfer.traveler_id.profile.firstName, transfer.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
+      : null) ||
+    transfer.traveler_id?.email ||
+    transfer.traveler_id?.username ||
+    null;
 
   // Primary display: Company first, then traveler
   let displayText = companyName || clientName;

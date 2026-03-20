@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { 
   Filter, Plus, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, Search,
   User, Clock, Copy, CheckSquare, Square,
-  ChevronDown, ChevronRight, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle, RotateCcw
+  ChevronDown, ChevronRight, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle, RotateCcw, UserPlus
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import { startOfDay } from 'date-fns'
@@ -15,6 +15,7 @@ import { getClientAndTravelerNames, getTransferStatusDisplay, getAirlineDisplay,
 import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 import Dropdown from '../components/Dropdown'
 import Drawer from '../components/Drawer'
+import AddTravelerInSameCar from '../components/AddTravelerInSameCar'
 import axios from 'axios'
 
 const TransfersEnhanced = () => {
@@ -74,6 +75,9 @@ const TransfersEnhanced = () => {
   const [flightFetchLoading, setFlightFetchLoading] = useState(false)
   const [flightFetchError, setFlightFetchError] = useState(null)
   const [flightSaveLoading, setFlightSaveLoading] = useState(false)
+  const [fetchedTerminalOverride, setFetchedTerminalOverride] = useState('')
+  const [showAddTravelerInSameCar, setShowAddTravelerInSameCar] = useState(false)
+  const [removingDelegateId, setRemovingDelegateId] = useState(null)
   // Manual flight entry (when not from sheet/fetch)
   const [manualFlight, setManualFlight] = useState({
     flight_no: '',
@@ -83,7 +87,8 @@ const TransfersEnhanced = () => {
     departure_time: '',
     arrival_airport: '',
     arrival_date: '',
-    arrival_time: ''
+    arrival_time: '',
+    terminal: ''
   })
   
   const navigate = useNavigate()
@@ -111,6 +116,7 @@ const TransfersEnhanced = () => {
   const openFlightDrawer = (leg, existing = null) => {
     setFlightDrawerLeg(leg)
     setFetchedFlightData(null)
+    setFetchedTerminalOverride('')
     setFlightFetchError(null)
     if (existing?.flight_no) {
       setFlightNumberInput(existing.flight_no)
@@ -127,7 +133,8 @@ const TransfersEnhanced = () => {
         departure_time: toTimeStr(dep),
         arrival_airport: existing.arrival_airport || '',
         arrival_date: toDateStr(arr),
-        arrival_time: toTimeStr(arr)
+        arrival_time: toTimeStr(arr),
+        terminal: existing.terminal || ''
       })
     } else {
       setFlightNumberInput('')
@@ -141,7 +148,8 @@ const TransfersEnhanced = () => {
         departure_time: '12:00',
         arrival_airport: leg === 'return' ? '' : 'KUL',
         arrival_date: defDate,
-        arrival_time: '14:00'
+        arrival_time: '14:00',
+        terminal: ''
       })
     }
     setShowFlightDrawer(true)
@@ -165,7 +173,9 @@ const TransfersEnhanced = () => {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (res.data?.success && res.data.data) {
-        setFetchedFlightData(res.data.data)
+        const d = res.data.data
+        setFetchedFlightData(d)
+        setFetchedTerminalOverride(d.terminal || '')
         toast.success('Flight details retrieved')
       } else {
         const apiMsg = res.data?.message || 'Flight not found'
@@ -210,7 +220,7 @@ const TransfersEnhanced = () => {
         departure_time: depTime.toISOString(),
         arrival_time: arrTime.toISOString(),
         scheduled_arrival: arrTime.toISOString(),
-        terminal: d.terminal?.trim() || undefined,
+        terminal: (fetchedTerminalOverride || d.terminal || '').trim() || undefined,
         status: d.status || 'on_time',
         delay_minutes: d.delayMinutes ?? 0
       }
@@ -232,7 +242,7 @@ const TransfersEnhanced = () => {
         departure_time: depDate.toISOString(),
         arrival_time: arrDate.toISOString(),
         scheduled_arrival: arrDate.toISOString(),
-        terminal: undefined,
+        terminal: (manualFlight.terminal || '').trim() || undefined,
         status: 'on_time',
         delay_minutes: 0
       }
@@ -544,6 +554,35 @@ const TransfersEnhanced = () => {
       toast.error('Failed to update status')
     }
   }
+
+  const handleRemoveDelegate = async (delegateTravelerId) => {
+    if (!selectedTransfer?._id || !delegateTravelerId) return;
+    setRemovingDelegateId(delegateTravelerId);
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api';
+      const token = localStorage.getItem('token');
+      const updatedDelegates = (selectedTransfer.delegates || [])
+        .filter((d) => String(d.traveler_id?._id || d.traveler_id) !== String(delegateTravelerId))
+        .map((d) => ({
+          traveler_id: d.traveler_id?._id || d.traveler_id,
+          flight_same_as_primary: d.flight_same_as_primary !== false,
+        }));
+      const response = await axios.put(`${API_BASE_URL}/transfers/${selectedTransfer._id}/client-details`, { delegates: updatedDelegates }, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+      });
+      if (response.data?.success) {
+        toast.success('Traveler removed from same car');
+        setSelectedTransfer(response.data.data || response.data);
+        setTransfers(prev => prev.map(t => t._id === selectedTransfer._id ? (response.data.data || response.data) : t));
+      } else {
+        toast.error(response.data?.message || 'Failed to remove traveler');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove traveler');
+    } finally {
+      setRemovingDelegateId(null);
+    }
+  };
 
   // Bulk delete
   const handleBulkDelete = async () => {
@@ -2035,6 +2074,20 @@ const TransfersEnhanced = () => {
                   {flightDrawerLeg === 'onward' ? 'Onward arrival airport is KUL. ' : 'Return departure airport is KUL. '}
                   Fill in when not available from sheet.
                 </p>
+                <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-muted/30 border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setManualFlight(prev => ({
+                      ...prev,
+                      departure_time: '00:00',
+                      arrival_time: '00:00'
+                    }))}
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    Set 00:00 for TBD flight
+                  </button>
+                  <span className="text-xs text-muted-foreground">— Use when flight time is not yet known</span>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-foreground mb-1">Flight No</label>
@@ -2104,6 +2157,16 @@ const TransfersEnhanced = () => {
                       className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">Terminal</label>
+                    <input
+                      type="text"
+                      value={manualFlight.terminal}
+                      onChange={e => setManualFlight(prev => ({ ...prev, terminal: e.target.value }))}
+                      placeholder="e.g. T1, T2"
+                      className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -2115,7 +2178,16 @@ const TransfersEnhanced = () => {
                       <div><span className="text-muted-foreground">Route:</span> <span className="text-foreground">{fetchedFlightData.departureAirport} → {fetchedFlightData.arrivalAirport}</span></div>
                       <div><span className="text-muted-foreground">Departure:</span> <span className="text-foreground">{formatDateTimeFriendly(fetchedFlightData.departureTime)}</span></div>
                       <div><span className="text-muted-foreground">Arrival:</span> <span className="text-foreground">{formatDateTimeFriendly(fetchedFlightData.arrivalTime)}</span></div>
-                      {fetchedFlightData.terminal && <div><span className="text-muted-foreground">Terminal:</span> <span className="text-foreground">{fetchedFlightData.terminal}</span></div>}
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-foreground mb-1">Terminal</label>
+                        <input
+                          type="text"
+                          value={fetchedTerminalOverride}
+                          onChange={e => setFetchedTerminalOverride(e.target.value)}
+                          placeholder="e.g. T1, T2"
+                          className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                        />
+                      </div>
                     </div>
                   </div>
                   <button
@@ -2335,10 +2407,78 @@ const TransfersEnhanced = () => {
                   )
                 })()}
 
+                {/* Travelers in same car */}
+                {(isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) && selectedTransfer.customer_id && (
+                  <div className="border-t border-border pt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Users size={16} className="text-muted-foreground" />
+                        <h4 className="font-medium text-foreground m-0">Travelers in same car</h4>
+                      </div>
+                      <button
+                        onClick={() => setShowAddTravelerInSameCar(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                      >
+                        <UserPlus size={14} />
+                        Add traveler
+                      </button>
+                    </div>
+                    <div className="text-sm text-muted-foreground space-y-1 ml-6 pl-4 border-l-2 border-muted">
+                      {travelerName && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">•</span>
+                          <span className="text-foreground">{travelerName}</span>
+                          <span className="text-xs text-muted-foreground">(primary)</span>
+                        </div>
+                      )}
+                      {(selectedTransfer.delegates || []).map((d, i) => {
+                        const tid = d.traveler_id?._id || d.traveler_id;
+                        const name = d.traveler_id?.profile
+                          ? [d.traveler_id.profile.firstName, d.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
+                          : d.travelerName || d.traveler_id?.email || 'Traveler';
+                        return (
+                          <div key={i} className="flex items-center justify-between gap-2 group">
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">•</span>
+                              <span className="text-foreground">{name}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDelegate(tid)}
+                              disabled={removingDelegateId === String(tid)}
+                              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                              title="Remove from same car"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {!travelerName && (!selectedTransfer.delegates || selectedTransfer.delegates.length === 0) && (
+                        <p className="text-muted-foreground italic">No travelers assigned</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
               </div>
             )
           })()}
         </Drawer>
+
+        {/* Add Traveler in Same Car Drawer */}
+        {(isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) && selectedTransfer && (
+          <AddTravelerInSameCar
+            transfer={selectedTransfer}
+            isOpen={showAddTravelerInSameCar}
+            onClose={() => setShowAddTravelerInSameCar(false)}
+            onSuccess={(updatedTransfer) => {
+              setSelectedTransfer(updatedTransfer)
+              setTransfers(prev => prev.map(t => t._id === updatedTransfer._id ? updatedTransfer : t))
+              setShowAddTravelerInSameCar(false)
+            }}
+          />
+        )}
       </div>
     </div>
   )

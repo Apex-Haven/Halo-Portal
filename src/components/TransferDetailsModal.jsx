@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Calendar, MapPin, User, Phone, Mail, Plane, Car, Clock, UserPlus, CheckCircle, Users } from 'lucide-react';
+import { Calendar, MapPin, User, Phone, Mail, Plane, Car, Clock, UserPlus, CheckCircle, Users, X } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
 import Drawer from './Drawer';
 import VendorDriverAssignment from './VendorDriverAssignment';
+import AddTravelerInSameCar from './AddTravelerInSameCar';
 import toast from 'react-hot-toast';
 import { getTransferDisplayName, getClientAndTravelerNames, getAirlineDisplay, hasRealFlight, getFlightNoDisplay, getFlightFieldDisplay, formatDateTimeFriendly } from '../utils/transferUtils';
 
@@ -13,7 +14,9 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
   const { user, isRole } = useAuth();
   const api = useApi();
   const [showAssignDriver, setShowAssignDriver] = useState(false);
+  const [showAddTravelerInSameCar, setShowAddTravelerInSameCar] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [removingDelegateId, setRemovingDelegateId] = useState(null);
   
   if (!transfer) return null;
   
@@ -59,6 +62,30 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
       toast.error(error.response?.data?.message || error.message || 'Failed to confirm action');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleRemoveDelegate = async (delegateTravelerId) => {
+    if (!transfer?._id || !delegateTravelerId) return;
+    setRemovingDelegateId(delegateTravelerId);
+    try {
+      const updatedDelegates = (transfer.delegates || [])
+        .filter((d) => String(d.traveler_id?._id || d.traveler_id) !== String(delegateTravelerId))
+        .map((d) => ({
+          traveler_id: d.traveler_id?._id || d.traveler_id,
+          flight_same_as_primary: d.flight_same_as_primary !== false,
+        }));
+      const response = await api.put(`/transfers/${transfer._id}/client-details`, { delegates: updatedDelegates });
+      if (response?.success) {
+        toast.success('Traveler removed from same car');
+        onTransferUpdated?.(response.data || transfer);
+      } else {
+        toast.error(response?.message || 'Failed to remove traveler');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to remove traveler');
+    } finally {
+      setRemovingDelegateId(null);
     }
   };
 
@@ -132,6 +159,62 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
                 </div>
               </div>
             </div>
+
+            {/* Travelers in same car */}
+            {(isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) && transfer.customer_id && (
+              <div className="bg-card border border-border p-5 rounded-lg shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center">
+                    <Users size={16} className="text-gray-500 dark:text-gray-400 mr-2" />
+                    <h3 className="text-base font-semibold text-gray-900 dark:text-white m-0">
+                      Travelers in same car
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setShowAddTravelerInSameCar(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                  >
+                    <UserPlus size={14} />
+                    Add traveler
+                  </button>
+                </div>
+                <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                  {travelerName && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 dark:text-gray-400">•</span>
+                      <span>{travelerName}</span>
+                      <span className="text-xs text-muted-foreground">(primary)</span>
+                    </div>
+                  )}
+                  {(transfer.delegates || []).map((d, i) => {
+                    const tid = d.traveler_id?._id || d.traveler_id;
+                    const name = d.traveler_id?.profile
+                      ? [d.traveler_id.profile.firstName, d.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
+                      : d.travelerName || d.traveler_id?.email || 'Traveler';
+                    return (
+                      <div key={i} className="flex items-center justify-between gap-2 group">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500 dark:text-gray-400">•</span>
+                          <span>{name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDelegate(tid)}
+                          disabled={removingDelegateId === String(tid)}
+                          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                          title="Remove from same car"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {!travelerName && (!transfer.delegates || transfer.delegates.length === 0) && (
+                    <p className="text-muted-foreground italic">No travelers assigned</p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Flight Details */}
             <div className="bg-card border border-border p-5 rounded-lg shadow-sm">
@@ -348,8 +431,21 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
               onTransferUpdated(updatedTransfer)
             }
             setShowAssignDriver(false)
-            // Refresh the transfer data by calling onTransferUpdated
-            // The parent component should refetch the transfer
+          }}
+        />
+      )}
+
+      {/* Add Traveler in Same Car Drawer */}
+      {(isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) && (
+        <AddTravelerInSameCar
+          transfer={transfer}
+          isOpen={showAddTravelerInSameCar}
+          onClose={() => setShowAddTravelerInSameCar(false)}
+          onSuccess={(updatedTransfer) => {
+            if (onTransferUpdated) {
+              onTransferUpdated(updatedTransfer)
+            }
+            setShowAddTravelerInSameCar(false)
           }}
         />
       )}

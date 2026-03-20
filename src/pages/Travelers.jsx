@@ -763,6 +763,11 @@ const Travelers = () => {
                         <div className="text-xs text-muted-foreground mb-1">
                           Client: {getClientName(traveler)}
                         </div>
+                        {traveler.profile?.salutation && (
+                          <div className="text-xs text-muted-foreground mb-1">
+                            Salutation: {traveler.profile.salutation}
+                          </div>
+                        )}
                         {traveler.profile?.phone && (
                           <div className="text-sm text-muted-foreground">
                             Phone: {traveler.profile.phone}

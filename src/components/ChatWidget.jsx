@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { MessageCircle, X, Send, Sparkles, Trash2, History, Plus, ChevronLeft, Pencil, Check } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useChat } from '../contexts/ChatContext'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
 
@@ -124,9 +125,8 @@ function formatReply(text) {
 
 const ChatWidget = () => {
   const { user } = useAuth()
+  const { open, setOpen } = useChat()
   const userId = user?._id || null
-
-  const [open, setOpen] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [sessions, setSessions] = useState([])
   const [currentChatId, setCurrentChatId] = useState(null)
@@ -329,14 +329,6 @@ const ChatWidget = () => {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all flex items-center justify-center z-40"
-        aria-label="Open HALO AI"
-      >
-        <MessageCircle size={24} />
-      </button>
-
       {open && (
         <div className="fixed inset-0 z-50 flex items-end justify-end sm:items-center sm:justify-end p-0 sm:p-4">
           <div

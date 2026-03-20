@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ChatProvider } from '../contexts/ChatContext'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import ChatWidget from './ChatWidget'
@@ -37,6 +38,7 @@ const Layout = ({ children }) => {
   }
 
   return (
+    <ChatProvider>
     <div className="flex flex-col h-screen bg-background">
       {/* Fixed Header */}
       <Header onMenuClick={handleToggleCollapse} />
@@ -77,6 +79,7 @@ const Layout = ({ children }) => {
       </div>
       <ChatWidget />
     </div>
+    </ChatProvider>
   )
 }
 
