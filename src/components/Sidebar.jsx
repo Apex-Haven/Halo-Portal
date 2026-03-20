@@ -21,7 +21,7 @@ const navigationItems = [
     name: 'Dashboard', 
     href: '/', 
     icon: LayoutDashboard,
-    roles: ['SUPER_ADMIN', 'ADMIN']
+    roles: ['SUPER_ADMIN', 'ADMIN', 'CLIENT']
   },
   { 
     name: 'Operations', 

@@ -82,7 +82,7 @@ const ProtectedApp = () => {
           <Routes>
             {/* Admin/Super Admin only routes */}
             <Route path="/" element={
-              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN', 'ADMIN', 'CLIENT']} redirectTo="/transfers">
                 <Dashboard />
               </ProtectedRoute>
             } />
