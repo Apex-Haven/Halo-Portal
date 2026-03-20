@@ -2419,21 +2419,23 @@ const TransfersEnhanced = () => {
                   )
                 })()}
 
-                {/* Travelers in same car */}
-                {(isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) && selectedTransfer.customer_id && (
+                {/* Travelers in same car - visible to client (view only), editable by admin/ops */}
+                {selectedTransfer.customer_id && (isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER') || isRole('CLIENT')) && (
                   <div className="border-t border-border pt-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <Users size={16} className="text-muted-foreground" />
                         <h4 className="font-medium text-foreground m-0">Travelers in same car</h4>
                       </div>
-                      <button
-                        onClick={() => setShowAddTravelerInSameCar(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-                      >
-                        <UserPlus size={14} />
-                        Add traveler
-                      </button>
+                      {(isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) && (
+                        <button
+                          onClick={() => setShowAddTravelerInSameCar(true)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                        >
+                          <UserPlus size={14} />
+                          Add traveler
+                        </button>
+                      )}
                     </div>
                     <div className="text-sm text-muted-foreground space-y-1 ml-6 pl-4 border-l-2 border-muted">
                       {travelerName && (
@@ -2448,21 +2450,24 @@ const TransfersEnhanced = () => {
                         const name = d.traveler_id?.profile
                           ? [d.traveler_id.profile.firstName, d.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
                           : d.travelerName || d.traveler_id?.email || 'Traveler';
+                        const canEdit = isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER');
                         return (
                           <div key={i} className="flex items-center justify-between gap-2 group">
                             <div className="flex items-center gap-2">
                               <span className="text-muted-foreground">•</span>
                               <span className="text-foreground">{name}</span>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveDelegate(tid)}
-                              disabled={removingDelegateId === String(tid)}
-                              className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                              title="Remove from same car"
-                            >
-                              <X size={14} />
-                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDelegate(tid)}
+                                disabled={removingDelegateId === String(tid)}
+                                className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                                title="Remove from same car"
+                              >
+                                <X size={14} />
+                              </button>
+                            )}
                           </div>
                         );
                       })}

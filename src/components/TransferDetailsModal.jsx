@@ -160,8 +160,8 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
               </div>
             </div>
 
-            {/* Travelers in same car */}
-            {(isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) && transfer.customer_id && (
+            {/* Travelers in same car - visible to client (view only), editable by admin/ops */}
+            {transfer.customer_id && (isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER') || isRole('CLIENT')) && (
               <div className="bg-card border border-border p-5 rounded-lg shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center">
@@ -170,13 +170,15 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
                       Travelers in same car
                     </h3>
                   </div>
-                  <button
-                    onClick={() => setShowAddTravelerInSameCar(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-                  >
-                    <UserPlus size={14} />
-                    Add traveler
-                  </button>
+                  {(isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER')) && (
+                    <button
+                      onClick={() => setShowAddTravelerInSameCar(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                    >
+                      <UserPlus size={14} />
+                      Add traveler
+                    </button>
+                  )}
                 </div>
                 <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                   {travelerName && (
@@ -191,21 +193,24 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
                     const name = d.traveler_id?.profile
                       ? [d.traveler_id.profile.firstName, d.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
                       : d.travelerName || d.traveler_id?.email || 'Traveler';
+                    const canEdit = isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER');
                     return (
                       <div key={i} className="flex items-center justify-between gap-2 group">
                         <div className="flex items-center gap-2">
                           <span className="text-gray-500 dark:text-gray-400">•</span>
                           <span>{name}</span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveDelegate(tid)}
-                          disabled={removingDelegateId === String(tid)}
-                          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-                          title="Remove from same car"
-                        >
-                          <X size={14} />
-                        </button>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDelegate(tid)}
+                            disabled={removingDelegateId === String(tid)}
+                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                            title="Remove from same car"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
