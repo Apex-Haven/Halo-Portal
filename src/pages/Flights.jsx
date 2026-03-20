@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Search, Plane, MapPin, AlertCircle, User, Filter, Building2 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { getTransferDisplayName, getClientAndTravelerNames, formatDateTimeFriendly } from '../utils/transferUtils'
 
 const Flights = () => {
-  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('all-flights')
 
   // All Flights Tab State - filter type and search term
@@ -369,8 +367,7 @@ const Flights = () => {
                     {sortedFlights.map((flight) => (
                       <div
                         key={flight.id}
-                        onClick={() => navigate(`/transfers?id=${flight.transferId}`)}
-                        className="grid grid-cols-8 gap-4 px-6 py-4 border-b border-border items-center text-sm hover:bg-muted/30 transition-colors cursor-pointer"
+                        className="grid grid-cols-8 gap-4 px-6 py-4 border-b border-border items-center text-sm"
                       >
                         <div className="font-semibold text-foreground">{flight.flightNumber}</div>
                         <div className="text-foreground">{flight.airline}</div>

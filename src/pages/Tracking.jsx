@@ -13,7 +13,7 @@ const SEARCH_TYPE_COMPANY_TRAVELER = 'company_traveler';
 const Tracking = () => {
   const { isDark } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [searchType, setSearchType] = useState(() => localStorage.getItem('tracking_search_type') || SEARCH_TYPE_APEX);
+  const [searchType, setSearchType] = useState(() => localStorage.getItem('tracking_search_type') || SEARCH_TYPE_COMPANY_TRAVELER);
   // Load search state from localStorage on mount, or from URL id param
   const [trackingId, setTrackingId] = useState(() => {
     const urlId = searchParams.get('id')
@@ -409,26 +409,15 @@ const Tracking = () => {
             Track Your Transfer
           </h1>
           <p className="text-gray-500 dark:text-gray-400 text-base">
-            Track your transfer using your Apex ID, name, or company and traveler
+            Track your transfer using your company and traveler, or Apex ID or name
           </p>
         </div>
 
       {/* Search Section */}
       <div className="bg-card rounded-xl p-4 md:p-6 shadow-sm border border-border mb-6 md:mb-8">
         <div className="flex flex-col gap-3">
-          {/* Search type toggle */}
+          {/* Search type toggle - Company & Traveler first */}
           <div className="flex gap-2 mb-1">
-            <button
-              type="button"
-              onClick={() => { setSearchType(SEARCH_TYPE_APEX); setSearchError(null); }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                searchType === SEARCH_TYPE_APEX
-                  ? 'bg-primary text-white'
-                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              Apex ID or Name
-            </button>
             <button
               type="button"
               onClick={() => { setSearchType(SEARCH_TYPE_COMPANY_TRAVELER); setSearchError(null); }}
@@ -440,6 +429,17 @@ const Tracking = () => {
             >
               <Building2 size={16} />
               Company & Traveler
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSearchType(SEARCH_TYPE_APEX); setSearchError(null); }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                searchType === SEARCH_TYPE_APEX
+                  ? 'bg-primary text-white'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              Apex ID or Name
             </button>
           </div>
 

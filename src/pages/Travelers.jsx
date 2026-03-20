@@ -21,6 +21,7 @@ const Travelers = () => {
     username: '',
     email: '',
     password: '',
+    salutation: '',
     firstName: '',
     lastName: '',
     phone: '',
@@ -94,6 +95,7 @@ const Travelers = () => {
         email: formData.email,
         password: formData.password,
         profile: {
+          salutation: formData.salutation || undefined,
           firstName: formData.firstName,
           lastName: formData.lastName,
           phone: formData.phone,
@@ -129,6 +131,7 @@ const Travelers = () => {
         username: formData.username,
         email: formData.email,
         profile: {
+          salutation: formData.salutation || undefined,
           firstName: formData.firstName,
           lastName: formData.lastName,
           phone: formData.phone,
@@ -342,6 +345,7 @@ const Travelers = () => {
       username: traveler.username || '',
       email: traveler.email || '',
       password: '',
+      salutation: traveler.profile?.salutation || '',
       firstName: traveler.profile?.firstName || '',
       lastName: traveler.profile?.lastName || '',
       phone: traveler.profile?.phone || '',
@@ -359,6 +363,7 @@ const Travelers = () => {
       username: '',
       email: '',
       password: '',
+      salutation: '',
       firstName: '',
       lastName: '',
       phone: '',
@@ -419,7 +424,7 @@ const Travelers = () => {
     const matchesSearch = 
       traveler.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       traveler.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      `${traveler.profile?.firstName} ${traveler.profile?.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      `${traveler.profile?.salutation || ''} ${traveler.profile?.firstName || ''} ${traveler.profile?.lastName || ''}`.trim().toLowerCase().includes(searchTerm.toLowerCase()) ||
       getClientName(traveler).toLowerCase().includes(searchTerm.toLowerCase())
     
     if (!matchesSearch) return false
@@ -564,6 +569,15 @@ const Travelers = () => {
     )
   }
 
+  const isPrologUser = () => {
+    if (!currentUser) return false
+    const u = (currentUser.username || '').toLowerCase()
+    const c = (currentUser.profile?.companyName || currentUser.profile?.company_name || '').toLowerCase()
+    const e = (currentUser.email || '').toLowerCase()
+    return u.includes('prolog') || c.includes('prolog') || e.includes('prolog')
+  }
+  const canDeleteTravelers = !isPrologUser()
+
   return (
     <div className="max-w-[1200px] mx-auto">
       {/* Header */}
@@ -618,7 +632,7 @@ const Travelers = () => {
             minWidth="100%"
           />
         </div>
-        {selectedTravelers.size > 0 && (
+        {canDeleteTravelers && selectedTravelers.size > 0 && (
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
               {selectedTravelers.size} selected
@@ -662,7 +676,7 @@ const Travelers = () => {
                     <ChevronUp size={20} className="text-muted-foreground" />
                   )}
                 </button>
-                {!collapsedClients.has(group.clientId) && (
+                {canDeleteTravelers && !collapsedClients.has(group.clientId) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -701,26 +715,28 @@ const Travelers = () => {
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-3 flex-1">
-                            <button
-                              onClick={() => handleToggleSelect(traveler._id)}
-                              className={`mt-1 transition-opacity ${
-                                selectedTravelers.has(traveler._id) 
-                                  ? 'opacity-100' 
-                                  : 'opacity-0 group-hover:opacity-100'
-                              }`}
-                            >
-                              {selectedTravelers.has(traveler._id) ? (
-                                <CheckSquare size={18} className="text-primary" />
-                              ) : (
-                                <Square size={18} className="text-muted-foreground" />
-                              )}
-                            </button>
+                            {canDeleteTravelers && (
+                              <button
+                                onClick={() => handleToggleSelect(traveler._id)}
+                                className={`mt-1 transition-opacity ${
+                                  selectedTravelers.has(traveler._id) 
+                                    ? 'opacity-100' 
+                                    : 'opacity-0 group-hover:opacity-100'
+                                }`}
+                              >
+                                {selectedTravelers.has(traveler._id) ? (
+                                  <CheckSquare size={18} className="text-primary" />
+                                ) : (
+                                  <Square size={18} className="text-muted-foreground" />
+                                )}
+                              </button>
+                            )}
                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                               <User size={20} className="text-primary" />
                             </div>
                             <div>
                               <div className="font-semibold text-foreground">
-                                {traveler.profile?.firstName} {traveler.profile?.lastName}
+                                {[traveler.profile?.salutation, traveler.profile?.firstName, traveler.profile?.lastName].filter(Boolean).join(' ')}
                               </div>
                               <div className="text-xs text-muted-foreground">{traveler.email}</div>
                             </div>
@@ -733,13 +749,15 @@ const Travelers = () => {
                             >
                               <Edit size={16} />
                             </button>
-                            <button
-                              onClick={() => handleDeleteTraveler(traveler._id)}
-                              className="p-2 text-destructive hover:bg-destructive/10 rounded transition-colors"
-                              title="Delete"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            {canDeleteTravelers && (
+                              <button
+                                onClick={() => handleDeleteTraveler(traveler._id)}
+                                className="p-2 text-destructive hover:bg-destructive/10 rounded transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
                           </div>
                         </div>
                         <div className="text-xs text-muted-foreground mb-1">
@@ -846,7 +864,17 @@ const Travelers = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">Salutation</label>
+                  <input
+                    type="text"
+                    value={formData.salutation}
+                    onChange={(e) => setFormData({ ...formData, salutation: e.target.value })}
+                    placeholder="e.g. Mr, Mrs, Ms, Dr"
+                    className="w-full px-3 py-2 bg-background border border-input rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">First Name</label>
                   <input

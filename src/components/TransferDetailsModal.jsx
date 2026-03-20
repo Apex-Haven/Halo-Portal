@@ -118,7 +118,8 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
               </div>
               <div className="text-sm text-gray-700 dark:text-gray-300">
                 <div className="mb-2">
-                  <strong className="text-gray-900 dark:text-white">Name:</strong> {transfer.customer_details?.name || 'N/A'}
+                  <strong className="text-gray-900 dark:text-white">Name:</strong>{' '}
+                  {[transfer.customer_details?.salutation, transfer.customer_details?.name].filter(Boolean).join(' ') || 'N/A'}
                 </div>
                 <div className="mb-2">
                   <strong className="text-gray-900 dark:text-white">Email:</strong> {transfer.customer_details?.email || 'N/A'}

@@ -3,7 +3,7 @@
  */
 
 /** Fixed locations for all transfers */
-export const DEFAULT_AIRPORT = 'Kuala Lumpur, Malaysia'
+export const DEFAULT_AIRPORT = 'Kuala Lumpur International Airport (KUL)'
 export const DEFAULT_HOTEL = 'Grand Hyatt Kuala Lumpur'
 
 const getOrdinal = (n) => {
@@ -85,7 +85,9 @@ export const getTransferDisplayName = (transfer) => {
 
   const companyName = getCompanyName(transfer);
   const travelerName = transfer.traveler_details?.name || null;
-  const clientName = transfer.customer_details?.name || null;
+  const rawName = transfer.customer_details?.name || null;
+  const salutation = transfer.customer_details?.salutation?.trim();
+  const clientName = rawName ? (salutation ? `${salutation} ${rawName}` : rawName) : null;
 
   if (companyName && travelerName) {
     return `${companyName} - ${travelerName}`;
@@ -120,7 +122,9 @@ export const getClientAndTravelerNames = (transfer) => {
   }
 
   const companyName = getCompanyName(transfer) || null;
-  const clientName = transfer.customer_details?.name || 'N/A';
+  const rawName = transfer.customer_details?.name || 'N/A';
+  const salutation = transfer.customer_details?.salutation?.trim();
+  const clientName = salutation ? `${salutation} ${rawName}`.trim() : rawName;
   const travelerName = transfer.traveler_details?.name || null;
 
   // Primary display: Company first, then traveler

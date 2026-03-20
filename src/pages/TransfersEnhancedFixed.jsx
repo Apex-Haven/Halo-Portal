@@ -73,6 +73,17 @@ const TransfersEnhanced = () => {
   const [flightFetchLoading, setFlightFetchLoading] = useState(false)
   const [flightFetchError, setFlightFetchError] = useState(null)
   const [flightSaveLoading, setFlightSaveLoading] = useState(false)
+  // Manual flight entry (when not from sheet/fetch)
+  const [manualFlight, setManualFlight] = useState({
+    flight_no: '',
+    airline: 'TBD',
+    departure_airport: '',
+    departure_date: '',
+    departure_time: '',
+    arrival_airport: '',
+    arrival_date: '',
+    arrival_time: ''
+  })
   
   const navigate = useNavigate()
 
@@ -93,6 +104,9 @@ const TransfersEnhanced = () => {
     return today
   }
 
+  const toDateStr = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
+  const toTimeStr = (d) => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : ''
+
   const openFlightDrawer = (leg, existing = null) => {
     setFlightDrawerLeg(leg)
     setFetchedFlightData(null)
@@ -100,12 +114,34 @@ const TransfersEnhanced = () => {
     if (existing?.flight_no) {
       setFlightNumberInput(existing.flight_no)
       const dep = existing.departure_time ? new Date(existing.departure_time) : null
-      let dateStr = dep ? `${dep.getFullYear()}-${String(dep.getMonth() + 1).padStart(2, '0')}-${String(dep.getDate()).padStart(2, '0')}` : getDefaultFlightDate(selectedTransfer, leg)
+      const arr = existing.arrival_time ? new Date(existing.arrival_time) : null
+      let dateStr = dep ? toDateStr(dep) : getDefaultFlightDate(selectedTransfer, leg)
       if (dateStr < getTodayLocal()) dateStr = getTodayLocal()
       setFlightDateInput(dateStr)
+      setManualFlight({
+        flight_no: existing.flight_no || '',
+        airline: existing.airline || 'TBD',
+        departure_airport: existing.departure_airport || '',
+        departure_date: toDateStr(dep),
+        departure_time: toTimeStr(dep),
+        arrival_airport: existing.arrival_airport || '',
+        arrival_date: toDateStr(arr),
+        arrival_time: toTimeStr(arr)
+      })
     } else {
       setFlightNumberInput('')
       setFlightDateInput(getDefaultFlightDate(selectedTransfer, leg))
+      const defDate = getDefaultFlightDate(selectedTransfer, leg)
+      setManualFlight({
+        flight_no: '',
+        airline: 'TBD',
+        departure_airport: '',
+        departure_date: defDate,
+        departure_time: '12:00',
+        arrival_airport: leg === 'return' ? '' : 'KUL',
+        arrival_date: defDate,
+        arrival_time: '14:00'
+      })
     }
     setShowFlightDrawer(true)
   }
@@ -153,23 +189,23 @@ const TransfersEnhanced = () => {
   }
 
   const handleSaveFlight = async () => {
-    if (!fetchedFlightData || !selectedTransfer?._id) return
-    const d = fetchedFlightData
-    const depTime = d.departureTime ? new Date(d.departureTime) : null
-    const arrTime = d.arrivalTime ? new Date(d.arrivalTime) : null
-    if (!depTime || !arrTime || isNaN(depTime.getTime()) || isNaN(arrTime.getTime())) {
-      toast.error('Flight data missing departure or arrival time')
-      return
-    }
-    setFlightSaveLoading(true)
-    try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
-      const token = localStorage.getItem('token')
-      const flightPayload = {
-        flight_no: (d.flight || flightNumberInput).trim().toUpperCase(),
+    if (!selectedTransfer?._id) return
+    let flightPayload
+    if (fetchedFlightData) {
+      const d = fetchedFlightData
+      const depTime = d.departureTime ? new Date(d.departureTime) : null
+      const arrTime = d.arrivalTime ? new Date(d.arrivalTime) : null
+      if (!depTime || !arrTime || isNaN(depTime.getTime()) || isNaN(arrTime.getTime())) {
+        toast.error('Flight data missing departure or arrival time')
+        return
+      }
+      const depAirport = (d.departureAirport || '').trim() || 'TBD'
+      const arrAirport = (d.arrivalAirport || '').trim() || 'TBD'
+      flightPayload = {
+        flight_no: (d.flight || flightNumberInput).trim().toUpperCase() || 'XX000',
         airline: (d.airlineName || d.airlineCode || '').trim() || 'N/A',
-        departure_airport: (d.departureAirport || '').trim() || 'N/A',
-        arrival_airport: (d.arrivalAirport || '').trim() || 'N/A',
+        departure_airport: flightDrawerLeg === 'return' ? 'KUL' : depAirport,
+        arrival_airport: flightDrawerLeg === 'onward' ? 'KUL' : arrAirport,
         departure_time: depTime.toISOString(),
         arrival_time: arrTime.toISOString(),
         scheduled_arrival: arrTime.toISOString(),
@@ -177,6 +213,33 @@ const TransfersEnhanced = () => {
         status: d.status || 'on_time',
         delay_minutes: d.delayMinutes ?? 0
       }
+    } else {
+      const m = manualFlight
+      const depDate = m.departure_date ? new Date(m.departure_date + 'T' + (m.departure_time || '12:00') + ':00') : null
+      const arrDate = m.arrival_date ? new Date(m.arrival_date + 'T' + (m.arrival_time || '14:00') + ':00') : null
+      if (!depDate || !arrDate || isNaN(depDate.getTime()) || isNaN(arrDate.getTime())) {
+        toast.error('Please enter departure and arrival date/time')
+        return
+      }
+      const depAirport = (m.departure_airport || '').trim() || 'TBD'
+      const arrAirport = (m.arrival_airport || '').trim() || 'TBD'
+      flightPayload = {
+        flight_no: (m.flight_no || flightNumberInput).trim().toUpperCase() || 'XX000',
+        airline: (m.airline || '').trim() || 'TBD',
+        departure_airport: flightDrawerLeg === 'return' ? 'KUL' : depAirport,
+        arrival_airport: flightDrawerLeg === 'onward' ? 'KUL' : arrAirport,
+        departure_time: depDate.toISOString(),
+        arrival_time: arrDate.toISOString(),
+        scheduled_arrival: arrDate.toISOString(),
+        terminal: undefined,
+        status: 'on_time',
+        delay_minutes: 0
+      }
+    }
+    setFlightSaveLoading(true)
+    try {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
+      const token = localStorage.getItem('token')
       const payload = flightDrawerLeg === 'onward'
         ? { flight_details: flightPayload }
         : {
@@ -187,7 +250,7 @@ const TransfersEnhanced = () => {
                   ? selectedTransfer.return_transfer_details.toObject()
                   : selectedTransfer.return_transfer_details)
                 : {}),
-              estimated_pickup_time: depTime.toISOString()
+              estimated_pickup_time: flightPayload.departure_time
             }
           }
       const res = await axios.put(`${API_BASE_URL}/transfers/${selectedTransfer._id}/flight-details`, payload, {
@@ -1886,6 +1949,84 @@ const TransfersEnhanced = () => {
                 </div>
               )}
 
+              <div className="border-t border-border pt-5">
+                <p className="text-sm font-medium text-foreground mb-3">Or enter manually</p>
+                <p className="text-xs text-muted-foreground mb-4">
+                  {flightDrawerLeg === 'onward' ? 'Onward arrival airport is KUL. ' : 'Return departure airport is KUL. '}
+                  Fill in when not available from sheet.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">Flight No</label>
+                    <input
+                      type="text"
+                      value={manualFlight.flight_no}
+                      onChange={e => setManualFlight(prev => ({ ...prev, flight_no: e.target.value }))}
+                      placeholder="e.g. EY488"
+                      className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">Dep. Airport</label>
+                    <input
+                      type="text"
+                      value={flightDrawerLeg === 'return' ? 'KUL' : manualFlight.departure_airport}
+                      onChange={e => flightDrawerLeg === 'onward' && setManualFlight(prev => ({ ...prev, departure_airport: e.target.value }))}
+                      placeholder={flightDrawerLeg === 'return' ? 'KUL (fixed)' : 'e.g. LHR'}
+                      readOnly={flightDrawerLeg === 'return'}
+                      className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">Dep. Date</label>
+                    <input
+                      type="date"
+                      value={manualFlight.departure_date}
+                      onChange={e => setManualFlight(prev => ({ ...prev, departure_date: e.target.value }))}
+                      className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">Dep. Time (ETD)</label>
+                    <input
+                      type="time"
+                      value={manualFlight.departure_time}
+                      onChange={e => setManualFlight(prev => ({ ...prev, departure_time: e.target.value }))}
+                      className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">Arr. Airport</label>
+                    <input
+                      type="text"
+                      value={flightDrawerLeg === 'onward' ? 'KUL' : manualFlight.arrival_airport}
+                      onChange={e => flightDrawerLeg === 'return' && setManualFlight(prev => ({ ...prev, arrival_airport: e.target.value }))}
+                      placeholder={flightDrawerLeg === 'onward' ? 'KUL (fixed)' : 'e.g. LHR'}
+                      readOnly={flightDrawerLeg === 'onward'}
+                      className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-foreground mb-1">Arr. Date</label>
+                    <input
+                      type="date"
+                      value={manualFlight.arrival_date}
+                      onChange={e => setManualFlight(prev => ({ ...prev, arrival_date: e.target.value }))}
+                      className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-foreground mb-1">Arr. Time (ETA)</label>
+                    <input
+                      type="time"
+                      value={manualFlight.arrival_time}
+                      onChange={e => setManualFlight(prev => ({ ...prev, arrival_time: e.target.value }))}
+                      className="w-full py-2 px-3 border border-input rounded-lg bg-background text-foreground text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {fetchedFlightData && (
                 <div className="space-y-4">
                   <div className="p-5 rounded-xl bg-muted/30 dark:bg-muted/20 border border-border">
@@ -1905,6 +2046,16 @@ const TransfersEnhanced = () => {
                     {flightSaveLoading ? 'Saving...' : 'Save to Transfer'}
                   </button>
                 </div>
+              )}
+
+              {!fetchedFlightData && (
+                <button
+                  onClick={handleSaveFlight}
+                  disabled={flightSaveLoading || !manualFlight.departure_date || !manualFlight.arrival_date}
+                  className="w-full py-3 px-4 bg-primary text-white font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors shadow-sm"
+                >
+                  {flightSaveLoading ? 'Saving...' : 'Save Manual Entry to Transfer'}
+                </button>
               )}
             </div>
           )}
