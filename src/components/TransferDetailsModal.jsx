@@ -183,7 +183,7 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
                     <div className="flex items-center gap-2">
                       <span className="text-gray-500 dark:text-gray-400">•</span>
                       <span>{travelerName}</span>
-                      <span className="text-xs text-muted-foreground">(primary)</span>
+                      <span className="text-xs text-muted-foreground">— main traveler</span>
                     </div>
                   )}
                   {(transfer.delegates || []).map((d, i) => {

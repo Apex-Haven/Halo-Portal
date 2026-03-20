@@ -2440,7 +2440,7 @@ const TransfersEnhanced = () => {
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">•</span>
                           <span className="text-foreground">{travelerName}</span>
-                          <span className="text-xs text-muted-foreground">(primary)</span>
+                          <span className="text-xs text-muted-foreground">— main traveler</span>
                         </div>
                       )}
                       {(selectedTransfer.delegates || []).map((d, i) => {
