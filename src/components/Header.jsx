@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, Bell, User, ChevronDown, Settings, LogOut, Zap, Moon, Sun, Truck, UserPlus, FileText, MessageCircle } from 'lucide-react'
+import { Menu, Bell, User, ChevronDown, Settings, LogOut, Zap, Moon, Sun, Truck, UserPlus, FileText, Sparkles } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useChat } from '../contexts/ChatContext'
 import { useTheme } from '../contexts/ThemeContext'
@@ -156,15 +156,18 @@ const Header = ({ onMenuClick }) => {
 
       {/* Right side */}
       <div className="flex items-center gap-4">
-        {/* HALO AI Chat - in navbar to avoid blocking pagination */}
+        {/* HALO AI Chat */}
         {user && (
           <button
             onClick={() => openChat(true)}
-            className="p-2 rounded-md border-none bg-transparent cursor-pointer hover:bg-accent transition-colors"
-            title="HALO AI Chat"
+            className="group flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/30 transition-colors cursor-pointer"
+            title="HALO AI – Ask questions about your transfers"
             aria-label="Open HALO AI"
           >
-            <MessageCircle size={20} className="text-muted-foreground" />
+            <Sparkles size={16} className="text-primary" />
+            <span className="hidden sm:inline text-xs font-medium text-foreground">
+              HALO AI
+            </span>
           </button>
         )}
 
