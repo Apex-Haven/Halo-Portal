@@ -8,7 +8,7 @@ import DatePicker from 'react-datepicker'
 import { startOfDay } from 'date-fns'
 import 'react-datepicker/dist/react-datepicker.css'
 import toast from 'react-hot-toast'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
 import { getClientAndTravelerNames, getTransferStatusDisplay, getAirlineDisplay, hasRealFlight, getFlightNoDisplay, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatDateFriendly } from '../utils/transferUtils'
@@ -92,6 +92,7 @@ const TransfersEnhanced = () => {
   })
   
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const getTodayLocal = () => {
     const d = new Date()
@@ -312,6 +313,17 @@ const TransfersEnhanced = () => {
   useEffect(() => {
     if (!companyFilter) setTravelerFilter('')
   }, [companyFilter])
+
+  // Open specific transfer when navigating from Dashboard (e.g. /transfers?id=APX123456)
+  useEffect(() => {
+    const transferId = searchParams.get('id') || searchParams.get('transferId')
+    if (!transferId || transfers.length === 0) return
+    const transfer = transfers.find(t => t._id === transferId)
+    if (!transfer) return
+    setSelectedTransfer(transfer)
+    setShowDetailsModal(true)
+    setSearchParams({}, { replace: true })
+  }, [transfers, searchParams, setSearchParams])
 
   useEffect(() => {
     setCurrentPage(1)
