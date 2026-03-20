@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Search, Plane, MapPin, AlertCircle, User, Filter, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { getTransferDisplayName, getClientAndTravelerNames, formatDateTimeFriendly } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, formatDateTimeFriendly, getAirlineDisplay, hasRealFlight, getFlightFieldDisplay } from '../utils/transferUtils'
 
 const Flights = () => {
   const [activeTab, setActiveTab] = useState('all-flights')
@@ -80,35 +80,56 @@ const Flights = () => {
       const data = await response.json()
       
       if (data.success && data.data) {
-        // Extract flights from transfers
-        const flights = data.data
-          .filter(transfer => transfer.flight_details?.flight_no)
-          .map(transfer => {
-            const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
-            return {
-              id: transfer._id,
-              transferId: transfer._id,
+        // Extract flights from transfers (both onward/arrival and return)
+        const flights = []
+        data.data.forEach(transfer => {
+          const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
+          const base = {
+            transferId: transfer._id,
+            companyName,
+            clientName,
+            travelerName,
+            customerName: getTransferDisplayName(transfer),
+            transfer
+          }
+          if (hasRealFlight(transfer.flight_details)) {
+            flights.push({
+              ...base,
+              id: `${transfer._id}-onward`,
+              leg: 'arrival',
               flightNumber: transfer.flight_details.flight_no,
-              airline: transfer.flight_details.airline || 'N/A',
-              departure: transfer.flight_details.departure_airport || 'N/A',
-              arrival: transfer.flight_details.arrival_airport || 'N/A',
+              airline: getFlightFieldDisplay(getAirlineDisplay(transfer.flight_details)),
+              departure: getFlightFieldDisplay(transfer.flight_details.departure_airport),
+              arrival: getFlightFieldDisplay(transfer.flight_details.arrival_airport),
               scheduled_time: transfer.flight_details.scheduled_arrival || transfer.flight_details.arrival_time,
               actual_time: transfer.flight_details.actual_arrival,
               status: transfer.flight_details.flight_status || 'scheduled',
               terminal: transfer.flight_details.terminal,
-              delay_minutes: transfer.flight_details.delay_minutes || 0,
-              companyName,
-              clientName,
-              travelerName,
-              customerName: getTransferDisplayName(transfer),
-              transfer: transfer
-            }
-          })
-          .sort((a, b) => {
-            const dateA = new Date(a.scheduled_time || 0)
-            const dateB = new Date(b.scheduled_time || 0)
-            return dateB - dateA // Most recent first
-          })
+              delay_minutes: transfer.flight_details.delay_minutes || 0
+            })
+          }
+          if (hasRealFlight(transfer.return_flight_details)) {
+            flights.push({
+              ...base,
+              id: `${transfer._id}-return`,
+              leg: 'return',
+              flightNumber: transfer.return_flight_details.flight_no,
+              airline: getFlightFieldDisplay(getAirlineDisplay(transfer.return_flight_details)),
+              departure: getFlightFieldDisplay(transfer.return_flight_details.departure_airport),
+              arrival: getFlightFieldDisplay(transfer.return_flight_details.arrival_airport),
+              scheduled_time: transfer.return_flight_details.scheduled_departure || transfer.return_flight_details.departure_time,
+              actual_time: transfer.return_flight_details.actual_departure,
+              status: transfer.return_flight_details.flight_status || 'scheduled',
+              terminal: transfer.return_flight_details.terminal,
+              delay_minutes: transfer.return_flight_details.delay_minutes || 0
+            })
+          }
+        })
+        flights.sort((a, b) => {
+          const dateA = new Date(a.scheduled_time || 0)
+          const dateB = new Date(b.scheduled_time || 0)
+          return dateB - dateA // Most recent first
+        })
         
         setAllFlights(flights)
       } else {
@@ -187,6 +208,7 @@ const Flights = () => {
   const filteredFlights = allFlights.filter(flight => {
     if (!searchTerm.trim()) return true
     const search = searchTerm.trim().toLowerCase()
+    const legMatch = (flight.leg === 'arrival' && search === 'arrival') || (flight.leg === 'return' && search === 'return')
     switch (searchType) {
       case 'flight':
         return flight.flightNumber?.toLowerCase().includes(search) || flight.airline?.toLowerCase().includes(search)
@@ -205,7 +227,7 @@ const Flights = () => {
       case 'company':
         return flight.companyName?.toLowerCase().includes(search) || flight.clientName?.toLowerCase().includes(search)
       default:
-        return (
+        return legMatch || (
           flight.flightNumber?.toLowerCase().includes(search) ||
           flight.airline?.toLowerCase().includes(search) ||
           flight.departure?.toLowerCase().includes(search) ||
@@ -371,9 +393,12 @@ const Flights = () => {
                       >
                         <div className="font-semibold text-foreground">{flight.flightNumber}</div>
                         <div className="text-foreground">{flight.airline}</div>
-                        <div>
+                                        <div>
                           <div className="font-medium text-foreground">
                             {flight.departure} → {flight.arrival}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {flight.leg === 'arrival' ? 'Arrival' : 'Return'}
                           </div>
                           {flight.terminal && (
                             <div className="text-xs text-muted-foreground">Terminal {flight.terminal}</div>

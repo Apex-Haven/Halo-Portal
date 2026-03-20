@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { 
-  Filter, Plus, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, 
+  Filter, Plus, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, Search,
   User, Clock, Copy, CheckSquare, Square,
   ChevronDown, ChevronRight, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle, RotateCcw
 } from 'lucide-react'
@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { getClientAndTravelerNames, getTransferStatusDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatDateFriendly } from '../utils/transferUtils'
+import { getClientAndTravelerNames, getTransferStatusDisplay, getAirlineDisplay, hasRealFlight, getFlightNoDisplay, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatDateFriendly } from '../utils/transferUtils'
 import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 import Dropdown from '../components/Dropdown'
 import Drawer from '../components/Drawer'
@@ -25,6 +25,7 @@ const TransfersEnhanced = () => {
   const [companyFilter, setCompanyFilter] = useState('')
   const [travelerFilter, setTravelerFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
   const [viewMode, setViewMode] = useState('cards')
   const [sortBy, setSortBy] = useState('company') // 'company' | 'latest'
   
@@ -824,7 +825,7 @@ const TransfersEnhanced = () => {
           'Pickup Time': formatDateTimeFriendly(transfer.transfer_details?.estimated_pickup_time),
           'Vendor': transfer.vendor_details?.vendor_name,
           'Driver': transfer.assigned_driver_details?.name,
-          'Flight': transfer.flight_details?.flight_no,
+          'Flight': getFlightNoDisplay(transfer.flight_details),
           'Priority': transfer.priority
         }
       })
@@ -871,10 +872,23 @@ const TransfersEnhanced = () => {
           })
           .flatMap(t => [t.traveler_details?.name, t.customer_details?.name].filter(Boolean))
       )].sort((a, b) => (a || '').localeCompare(b || ''))
-    : []
+    : [...new Set(transfers.flatMap(t => [t.traveler_details?.name, t.customer_details?.name].filter(Boolean)))].sort((a, b) => (a || '').localeCompare(b || ''))
 
   // Filter transfers
   const filteredTransfers = transfers.filter(transfer => {
+    if (searchTerm.trim()) {
+      const term = searchTerm.trim().toLowerCase()
+      const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
+      const apexId = (transfer._id || '').toLowerCase()
+      const flightNo = (transfer.flight_details?.flight_no || '').toLowerCase()
+      const matchesSearch =
+        (companyName || '').toLowerCase().includes(term) ||
+        (clientName || '').toLowerCase().includes(term) ||
+        (travelerName || '').toLowerCase().includes(term) ||
+        apexId.includes(term) ||
+        flightNo.includes(term)
+      if (!matchesSearch) return false
+    }
     if (companyFilter) {
       const c = transfer.customer_details?.company_name || transfer.traveler_details?.company_name
       if ((c || '').toLowerCase() !== companyFilter.toLowerCase()) return false
@@ -998,15 +1012,35 @@ const TransfersEnhanced = () => {
   }
 
   // Timeline view component (uses paginated sorted list, accordion per date, sticky headers)
+  const NOT_DECIDED_KEY = '__not_decided_yet__'
+  const hasValidDate = (transfer) => {
+    const t = transfer.transfer_details?.estimated_pickup_time
+    if (!t) return false
+    const d = new Date(t)
+    if (isNaN(d.getTime())) return false
+    // No real flight on both legs = date not confirmed, treat as "not decided"
+    const hasOnward = hasRealFlight(transfer.flight_details)
+    const hasReturn = hasRealFlight(transfer.return_flight_details)
+    if (!hasOnward && !hasReturn) return false
+    return true
+  }
+
   const TimelineView = () => {
-    const groupedByDate = sortedTransfersPaginated.reduce((acc, transfer) => {
+    const withDate = sortedTransfersPaginated.filter(hasValidDate)
+    const noDate = sortedTransfersPaginated.filter(t => !hasValidDate(t))
+
+    const groupedByDate = withDate.reduce((acc, transfer) => {
       const date = new Date(transfer.transfer_details?.estimated_pickup_time).toDateString()
       if (!acc[date]) acc[date] = []
       acc[date].push(transfer)
       return acc
     }, {})
 
-    const dateEntries = Object.entries(groupedByDate)
+    const dateEntries = Object.entries(groupedByDate).sort(([a], [b]) => {
+      const dA = new Date(a).getTime()
+      const dB = new Date(b).getTime()
+      return dA - dB
+    })
 
     return (
       <div className="space-y-6">
@@ -1046,8 +1080,40 @@ const TransfersEnhanced = () => {
             )}
           </div>
         )})}
+
+        {/* Not decided yet – accordion at the end for transfers without dates */}
+        {noDate.length > 0 && (
+          <div className="rounded-lg border border-border bg-card">
+            <button
+              type="button"
+              onClick={() => toggleTimelineDate(NOT_DECIDED_KEY)}
+              className="sticky -top-6 z-[100] w-full flex items-center justify-between gap-2 bg-background py-3 px-4 border-b border-border hover:bg-muted/50 transition-colors text-left shadow-[0_4px_12px_-2px_rgba(0,0,0,0.15)] dark:shadow-[0_4px_12px_-2px_rgba(0,0,0,0.5)] rounded-t-lg"
+            >
+              <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                {collapsedTimelineDates.has(NOT_DECIDED_KEY) ? (
+                  <ChevronRight size={20} className="text-muted-foreground" />
+                ) : (
+                  <ChevronDown size={20} className="text-muted-foreground" />
+                )}
+                Not decided yet
+                <span className="text-sm text-muted-foreground font-normal">
+                  ({noDate.length} transfers)
+                </span>
+              </h3>
+            </button>
+            {!collapsedTimelineDates.has(NOT_DECIDED_KEY) && (
+              <div className="p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
+                  {noDate.map((transfer) => (
+                    <TransferCard key={transfer._id} transfer={transfer} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         
-        {dateEntries.length === 0 && (
+        {dateEntries.length === 0 && noDate.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             No transfers scheduled
           </div>
@@ -1123,6 +1189,19 @@ const TransfersEnhanced = () => {
         {/* Search and Filters – above bulk actions */}
         <div className="bg-card rounded-lg border border-border p-4 mb-6">
           <div className="flex flex-col sm:flex-row gap-4 flex-wrap items-end w-full">
+            <div className="flex-1 min-w-[180px] sm:min-w-[220px]">
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Search</label>
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Company, traveler, Apex ID, flight..."
+                  className="w-full pl-9 pr-3 py-2 border border-input rounded-md bg-background text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            </div>
             <div className="flex-1 min-w-[180px] sm:min-w-[200px]">
               <label className="block text-xs font-medium text-muted-foreground mb-1">Company</label>
               <Dropdown
@@ -1142,10 +1221,10 @@ const TransfersEnhanced = () => {
                 value={travelerFilter}
                 onChange={(e) => setTravelerFilter(e.target.value)}
                 options={[
-                  { value: '', label: !companyFilter ? 'Select company first' : 'All travelers' },
+                  { value: '', label: 'All travelers' },
                   ...travelersForCompany.map(t => ({ value: t, label: t }))
                 ]}
-                placeholder={!companyFilter ? 'Select company first' : 'Select traveler'}
+                placeholder="Select traveler"
                 minWidth="100%"
               />
             </div>
@@ -1161,12 +1240,13 @@ const TransfersEnhanced = () => {
                 placeholder="All Status"
                 minWidth="140px"
               />
-              {(statusFilter !== 'all' || companyFilter || travelerFilter) && (
+              {(statusFilter !== 'all' || companyFilter || travelerFilter || searchTerm.trim()) && (
                 <button
                   onClick={() => {
                     setStatusFilter('all')
                     setCompanyFilter('')
                     setTravelerFilter('')
+                    setSearchTerm('')
                   }}
                   className="px-3 py-2 bg-transparent border border-input rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 >
@@ -2095,9 +2175,7 @@ const TransfersEnhanced = () => {
 
                 {/* Onward Transfer */}
                 {(() => {
-                  const hasOnwardFlight = selectedTransfer.flight_details?.flight_no &&
-                    selectedTransfer.flight_details.flight_no !== 'XX000' &&
-                    selectedTransfer.flight_details.flight_no !== 'TBD'
+                  const hasOnwardFlight = hasRealFlight(selectedTransfer.flight_details)
                   const isOnwardFlightMissing = !hasOnwardFlight
                   return (
                 <div>
@@ -2152,14 +2230,14 @@ const TransfersEnhanced = () => {
                         </p>
                       </div>
                     </div>
-                    {hasOnwardFlight && (
+                      {hasOnwardFlight && (
                       <div className="p-3 bg-muted/50 rounded border border-border">
                         <h5 className="font-medium text-sm mb-2">Flight</h5>
                         <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div><strong>Flight:</strong> {selectedTransfer.flight_details.flight_no}</div>
-                          <div><strong>Airline:</strong> {selectedTransfer.flight_details?.airline || 'N/A'}</div>
-                          <div><strong>Departure:</strong> {formatDateTimeFriendly(selectedTransfer.flight_details?.departure_time) || 'N/A'}</div>
-                          <div><strong>Terminal:</strong> {selectedTransfer.flight_details?.terminal || 'N/A'}</div>
+                          <div><strong>Flight:</strong> {getFlightNoDisplay(selectedTransfer.flight_details)}</div>
+                          <div><strong>Airline:</strong> {getAirlineDisplay(selectedTransfer.flight_details)}</div>
+                          <div><strong>Departure:</strong> {selectedTransfer.flight_details?.departure_time ? formatDateTimeFriendly(selectedTransfer.flight_details.departure_time) : 'TBD'}</div>
+                          <div><strong>Terminal:</strong> {getFlightFieldDisplay(selectedTransfer.flight_details?.terminal)}</div>
                         </div>
                       </div>
                     )}
@@ -2176,9 +2254,7 @@ const TransfersEnhanced = () => {
 
                 {/* Return Transfer */}
                 {(selectedTransfer.return_transfer_details || selectedTransfer.return_flight_details) && (() => {
-                  const hasReturnFlight = selectedTransfer.return_flight_details?.flight_no && 
-                    selectedTransfer.return_flight_details.flight_no !== 'XX000' && 
-                    selectedTransfer.return_flight_details.flight_no !== 'TBD'
+                  const hasReturnFlight = hasRealFlight(selectedTransfer.return_flight_details)
                   const isReturnFlightMissing = !hasReturnFlight
                   const isReturnDepartureMissing = !selectedTransfer.return_transfer_details?.estimated_pickup_time || !selectedTransfer.return_flight_details?.departure_time
                   return (
@@ -2241,10 +2317,10 @@ const TransfersEnhanced = () => {
                         <div className="p-3 bg-muted/50 rounded border border-border">
                           <h5 className="font-medium text-sm mb-2">Return Flight</h5>
                           <div className="grid grid-cols-2 gap-2 text-sm">
-                            <div><strong>Flight:</strong> {selectedTransfer.return_flight_details.flight_no}</div>
-                            <div><strong>Airline:</strong> {selectedTransfer.return_flight_details?.airline || 'N/A'}</div>
-                            <div><strong>Departure:</strong> {formatDateTimeFriendly(selectedTransfer.return_flight_details?.departure_time) || 'N/A'}</div>
-                            <div><strong>Terminal:</strong> {selectedTransfer.return_flight_details?.terminal || 'N/A'}</div>
+                            <div><strong>Flight:</strong> {getFlightNoDisplay(selectedTransfer.return_flight_details)}</div>
+                            <div><strong>Airline:</strong> {getAirlineDisplay(selectedTransfer.return_flight_details)}</div>
+                            <div><strong>Departure:</strong> {selectedTransfer.return_flight_details?.departure_time ? formatDateTimeFriendly(selectedTransfer.return_flight_details.departure_time) : 'TBD'}</div>
+                            <div><strong>Terminal:</strong> {getFlightFieldDisplay(selectedTransfer.return_flight_details?.terminal)}</div>
                           </div>
                         </div>
                       )}

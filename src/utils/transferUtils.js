@@ -6,6 +6,80 @@
 export const DEFAULT_AIRPORT = 'Kuala Lumpur International Airport (KUL)'
 export const DEFAULT_HOTEL = 'Grand Hyatt Kuala Lumpur'
 
+/** IATA airline code → airline name (fallback when stored as TBD) */
+const AIRLINE_BY_CODE = {
+  EY: 'Etihad Airways',
+  SQ: 'Singapore Airlines',
+  MH: 'Malaysia Airlines',
+  EK: 'Emirates',
+  TK: 'Turkish Airlines',
+  BR: 'EVA Air',
+  BA: 'British Airways',
+  CX: 'Cathay Pacific',
+  NH: 'All Nippon Airways',
+  UA: 'United Airlines',
+  QR: 'Qatar Airways',
+  AI: 'Air India',
+  LH: 'Lufthansa',
+  AF: 'Air France',
+  KL: 'KLM',
+  QF: 'Qantas',
+  TG: 'Thai Airways',
+  CZ: 'China Southern',
+  CA: 'Air China',
+  MU: 'China Eastern',
+}
+
+/**
+ * Get airline display name - uses stored airline or lookup from flight number when TBD
+ * @param {Object} flightDetails - flight_details or return_flight_details
+ * @returns {string} Airline name for display
+ */
+export const getAirlineDisplay = (flightDetails) => {
+  if (!flightDetails) return 'N/A'
+  const stored = (flightDetails.airline || '').trim()
+  if (stored && stored !== 'TBD' && stored !== 'N/A') return stored
+  const fn = (flightDetails.flight_no || '').trim()
+  if (!fn) return stored || 'N/A'
+  const normalized = fn.replace(/\s/g, '').toUpperCase()
+  const match = normalized.match(/^([A-Z0-9]{2})\d/)
+  if (!match) return stored || 'N/A'
+  return AIRLINE_BY_CODE[match[1]] || stored || 'N/A'
+}
+
+const PLACEHOLDER_FLIGHTS = ['XX000', 'TBD', 'N/A', '']
+
+/**
+ * Check if flight details represent a real flight (not placeholder)
+ */
+export const hasRealFlight = (flightDetails) => {
+  if (!flightDetails) return false
+  const fn = (flightDetails.flight_no || flightDetails.flight_number || '').trim().toUpperCase()
+  if (!fn || PLACEHOLDER_FLIGHTS.includes(fn)) return false
+  if (fn.length < 4) return false
+  return true
+}
+
+/**
+ * Get flight number for display - "No flight detail" when XX000/TBD/empty
+ */
+export const getFlightNoDisplay = (flightDetails) => {
+  if (!flightDetails) return 'No flight detail'
+  const fn = (flightDetails.flight_no || flightDetails.flight_number || '').trim()
+  if (!fn || PLACEHOLDER_FLIGHTS.includes(fn.toUpperCase())) return 'No flight detail'
+  return fn
+}
+
+/**
+ * Get flight field for display - TBD when missing (for onward/return flight fields)
+ */
+export const getFlightFieldDisplay = (value) => {
+  if (value == null || value === '' || String(value).trim() === '') return 'TBD'
+  const s = String(value).trim()
+  if (s === 'XX000' || s.toUpperCase() === 'TBD' || s === 'N/A' || s === '—') return 'TBD'
+  return s
+}
+
 const getOrdinal = (n) => {
   if (n >= 11 && n <= 13) return 'th'
   const last = n % 10

@@ -8,15 +8,15 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007
 const INITIAL_MESSAGES = [
   {
     role: 'bot',
-    content: 'Hi! I\'m HALO AI. I can help you check your transfer status. Try **company + traveler**, your Apex ID, or your name. Say **help** for more options.',
+    content: 'Hi! I\'m HALO AI. I can help you check transfer status and company details. Try **company + traveler**, your Apex ID, or "company details for [Company]". Say **help** for more options.',
     timestamp: new Date(),
   },
 ]
 
 const SUGGESTION_CHIPS = [
   'Status for Company, Traveler',
+  'Company details',
   'Help',
-  'Track transfer for John',
 ]
 
 const CHAT_SESSIONS_KEY = 'halo_chat_sessions'
@@ -228,6 +228,7 @@ const ChatWidget = () => {
           content: data.reply,
           timestamp: new Date(),
           transferId: data.transferId,
+          suggestions: data.suggestions,
         }
         updateCurrentChat((s) => ({ messages: [...s.messages, botMsg] }))
       } else {
@@ -470,24 +471,39 @@ const ChatWidget = () => {
                       key={i}
                       className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div
-                        className={`max-w-[85%] rounded-lg px-4 py-2 ${
-                          msg.role === 'user'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted/50 text-foreground border border-border'
-                        }`}
-                      >
-                        <div className="text-sm whitespace-pre-wrap">
-                          {msg.role === 'bot' ? formatReply(msg.content) : msg.content}
+                      <div className="max-w-[85%]">
+                        <div
+                          className={`rounded-lg px-4 py-2 ${
+                            msg.role === 'user'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted/50 text-foreground border border-border'
+                          }`}
+                        >
+                          <div className="text-sm whitespace-pre-wrap">
+                            {msg.role === 'bot' ? formatReply(msg.content) : msg.content}
+                          </div>
+                          {msg.role === 'bot' && msg.transferId && (
+                            <Link
+                              to={`/tracking?id=${encodeURIComponent(msg.transferId)}`}
+                              className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-primary hover:underline"
+                              onClick={() => setOpen(false)}
+                            >
+                              View full tracking →
+                            </Link>
+                          )}
                         </div>
-                        {msg.role === 'bot' && msg.transferId && (
-                          <Link
-                            to={`/tracking?id=${encodeURIComponent(msg.transferId)}`}
-                            className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-primary hover:underline"
-                            onClick={() => setOpen(false)}
-                          >
-                            View full tracking →
-                          </Link>
+                        {msg.role === 'bot' && msg.suggestions?.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {msg.suggestions.map((chip) => (
+                              <button
+                                key={chip}
+                                onClick={() => handleSend(chip)}
+                                className="px-3 py-1.5 text-xs rounded-full bg-muted/70 hover:bg-muted border border-border text-foreground transition-colors"
+                              >
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>

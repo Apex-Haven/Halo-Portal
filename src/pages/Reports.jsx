@@ -7,7 +7,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useTheme } from '../contexts/ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import { getTransferDisplayName } from '../utils/transferUtils'
+import { getTransferDisplayName, getFlightNoDisplay, getFlightFieldDisplay, getAirlineDisplay } from '../utils/transferUtils'
 
 const Reports = () => {
   const { user, isRole } = useAuth()
@@ -227,7 +227,7 @@ const Reports = () => {
         getTransferDisplayName(transfer),
         transfer.customer_details?.name || 'N/A',
         transfer.customer_details?.email || 'N/A',
-        transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A',
+        getFlightNoDisplay(transfer.flight_details),
         transfer.vendor_details?.vendor_name || transfer.vendor_details?.vendor_id || 'N/A',
         (transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'Pending').replace('_', ' ')
       ])
@@ -406,7 +406,7 @@ const Reports = () => {
 
         const transferData = customerTransfers.slice(0, 20).map(transfer => [
           getTransferDisplayName(transfer),
-          transfer.flight_details?.flight_no || 'N/A',
+          getFlightNoDisplay(transfer.flight_details),
           transfer.vendor_details?.vendor_name || 'N/A',
           (transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'Pending').replace('_', ' '),
           transfer.createdAt ? new Date(transfer.createdAt).toLocaleDateString() : 'N/A'
@@ -469,7 +469,7 @@ const Reports = () => {
       // Add transfer details
       const transferRows = customerTransfers.map((transfer, index) => [
         `Transfer ${index + 1}`,
-        `${getTransferDisplayName(transfer)} (${transfer._id || ''}), Flight: ${transfer.flight_details?.flight_no || 'N/A'}, Status: ${transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'Pending'}`
+        `${getTransferDisplayName(transfer)} (${transfer._id || ''}), Flight: ${getFlightNoDisplay(transfer.flight_details)}, Status: ${transfer.transfer_details?.transfer_status || transfer.transfer_details?.status || 'Pending'}`
       ])
 
       const csvContent = [
@@ -558,19 +558,19 @@ const Reports = () => {
       doc.setFont(undefined, 'bold')
       doc.text('Flight Number:', 14, yPosition)
       doc.setFont(undefined, 'normal')
-      doc.text(transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A', 50, yPosition)
+      doc.text(getFlightNoDisplay(transfer.flight_details), 50, yPosition)
       yPosition += 6
 
       doc.setFont(undefined, 'bold')
       doc.text('Airline:', 14, yPosition)
       doc.setFont(undefined, 'normal')
-      doc.text(transfer.flight_details?.airline || 'N/A', 50, yPosition)
+      doc.text(getFlightFieldDisplay(getAirlineDisplay(transfer.flight_details)), 50, yPosition)
       yPosition += 6
 
       doc.setFont(undefined, 'bold')
       doc.text('Arrival Airport:', 14, yPosition)
       doc.setFont(undefined, 'normal')
-      doc.text(transfer.flight_details?.arrival_airport || transfer.flight_details?.arrivalAirport || 'N/A', 50, yPosition)
+      doc.text(getFlightFieldDisplay(transfer.flight_details?.arrival_airport || transfer.flight_details?.arrivalAirport), 50, yPosition)
       yPosition += 6
 
       if (transfer.flight_details?.arrival_date) {
@@ -664,9 +664,9 @@ const Reports = () => {
         ['Customer Name', transfer.customer_details?.name || ''],
         ['Customer Email', transfer.customer_details?.email || ''],
         ['Customer Phone', transfer.customer_details?.phone || ''],
-        ['Flight Number', transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || ''],
-        ['Airline', transfer.flight_details?.airline || ''],
-        ['Arrival Airport', transfer.flight_details?.arrival_airport || transfer.flight_details?.arrivalAirport || ''],
+        ['Flight Number', getFlightNoDisplay(transfer.flight_details)],
+        ['Airline', getFlightFieldDisplay(getAirlineDisplay(transfer.flight_details))],
+        ['Arrival Airport', getFlightFieldDisplay(transfer.flight_details?.arrival_airport || transfer.flight_details?.arrivalAirport)],
         ['Arrival Date', transfer.flight_details?.arrival_date ? new Date(transfer.flight_details.arrival_date).toISOString() : ''],
         ['Vendor', transfer.vendor_details?.vendor_name || transfer.vendor_details?.vendor_id || ''],
         ['Driver', transfer.assigned_driver_details?.driver_name || transfer.assigned_driver_details?.name || ''],
@@ -1252,9 +1252,9 @@ const Reports = () => {
             item._id || '',
             item.customer_details?.name || '',
             item.customer_details?.email || '',
-            item.flight_details?.flight_no || item.flight_details?.flight_number || '',
-            item.flight_details?.airline || '',
-            item.flight_details?.arrival_airport || item.flight_details?.arrivalAirport || '',
+            getFlightNoDisplay(item.flight_details),
+            getFlightFieldDisplay(getAirlineDisplay(item.flight_details)),
+            getFlightFieldDisplay(item.flight_details?.arrival_airport || item.flight_details?.arrivalAirport),
             item.vendor_details?.vendor_name || item.vendor_details?.vendor_id || '',
             item.assigned_driver_details?.driver_name || item.assigned_driver_details?.name || '',
             item.transfer_details?.transfer_status || item.transfer_details?.status || '',
@@ -1425,7 +1425,7 @@ const Reports = () => {
                       ? (() => {
                           const transfer = transfers.find(t => t._id === selectedTransfer || t.id === selectedTransfer);
                           return transfer 
-                            ? `${getTransferDisplayName(transfer)} - ${transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A'}`
+                            ? `${getTransferDisplayName(transfer)} - ${getFlightNoDisplay(transfer.flight_details)}`
                             : 'Select transfer...';
                         })()
                       : 'Select transfer...'}
@@ -1464,7 +1464,7 @@ const Reports = () => {
                           return customerName.includes(searchLower) || customerEmail.includes(searchLower) || flightNo.includes(searchLower) || vendorName.includes(searchLower) || transferId.includes(searchLower)
                         })
                         .map(transfer => {
-                          const transferLabel = `${getTransferDisplayName(transfer)} - ${transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A'}`
+                          const transferLabel = `${getTransferDisplayName(transfer)} - ${getFlightNoDisplay(transfer.flight_details)}`
                           return (
                             <div
                               key={transfer._id || transfer.id}

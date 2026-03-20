@@ -4,7 +4,7 @@ import { MapPin, Clock, User, Car, Navigation, CheckCircle, Circle, AlertCircle,
 // import LiveMap from '../components/LiveMap'; // Commented out for now
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
-import { getClientAndTravelerNames, getTransferStatusDisplay, getLegStatusDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatTimeFriendly } from '../utils/transferUtils';
+import { getClientAndTravelerNames, getTransferStatusDisplay, getLegStatusDisplay, getAirlineDisplay, hasRealFlight, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatTimeFriendly } from '../utils/transferUtils';
 import Dropdown from '../components/Dropdown';
 
 const SEARCH_TYPE_APEX = 'apex';
@@ -753,7 +753,7 @@ const Tracking = () => {
                     )}
 
                     {/* Flight (only when real flight) */}
-                    {transfer.flight_details?.flight_no && transfer.flight_details.flight_no !== 'XX000' && transfer.flight_details.flight_no !== 'TBD' && (
+                    {hasRealFlight(transfer.flight_details) && (
                       <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-3">
                         <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2">
                           <Plane size={16} /> Onward Flight
@@ -765,18 +765,18 @@ const Tracking = () => {
                           </div>
                           <div>
                             <span className="text-muted-foreground">Airline</span>
-                            <p className="font-medium text-foreground">{transfer.flight_details.airline || '—'}</p>
+                            <p className="font-medium text-foreground">{getAirlineDisplay(transfer.flight_details) || '—'}</p>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Route</span>
                             <p className="font-medium text-foreground">
-                              {[transfer.flight_details.departure_airport, transfer.flight_details.arrival_airport].filter(Boolean).join(' → ') || '—'}
+                              {getFlightFieldDisplay([transfer.flight_details.departure_airport, transfer.flight_details.arrival_airport].filter(Boolean).join(' → '))}
                             </p>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Arrival</span>
                             <p className="font-medium text-foreground">
-                              {formatDateTime(transfer.flight_details.arrival_time) || formatTime(transfer.flight_details.arrival_time) || '—'}
+                              {getFlightFieldDisplay(formatDateTime(transfer.flight_details.arrival_time) || formatTime(transfer.flight_details.arrival_time))}
                             </p>
                           </div>
                           {transfer.flight_details.status && transfer.flight_details.status !== 'on_time' && (
@@ -798,7 +798,7 @@ const Tracking = () => {
                     )}
 
                     {/* Return Flight (when available and real flight) */}
-                    {transfer.return_flight_details?.flight_no && transfer.return_flight_details.flight_no !== 'XX000' && transfer.return_flight_details.flight_no !== 'TBD' && (
+                    {hasRealFlight(transfer.return_flight_details) && (
                       <div className="rounded-xl border border-border bg-muted/20 dark:bg-muted/10 p-4 space-y-3">
                         <h3 className="text-sm font-semibold text-foreground uppercase tracking-wide text-muted-foreground flex items-center gap-2">
                           <Plane size={16} /> Return Flight
@@ -810,18 +810,18 @@ const Tracking = () => {
                           </div>
                           <div>
                             <span className="text-muted-foreground">Airline</span>
-                            <p className="font-medium text-foreground">{transfer.return_flight_details.airline || '—'}</p>
+                            <p className="font-medium text-foreground">{getAirlineDisplay(transfer.return_flight_details) || '—'}</p>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Route</span>
                             <p className="font-medium text-foreground">
-                              {[transfer.return_flight_details.departure_airport, transfer.return_flight_details.arrival_airport].filter(Boolean).join(' → ') || '—'}
+                              {getFlightFieldDisplay([transfer.return_flight_details.departure_airport, transfer.return_flight_details.arrival_airport].filter(Boolean).join(' → '))}
                             </p>
                           </div>
                           <div>
                             <span className="text-muted-foreground">Departure</span>
                             <p className="font-medium text-foreground">
-                              {formatDateTime(transfer.return_flight_details.departure_time) || formatTime(transfer.return_flight_details.departure_time) || '—'}
+                              {getFlightFieldDisplay(formatDateTime(transfer.return_flight_details.departure_time) || formatTime(transfer.return_flight_details.departure_time))}
                             </p>
                           </div>
                           {transfer.return_flight_details.status && transfer.return_flight_details.status !== 'on_time' && (

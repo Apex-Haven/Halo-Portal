@@ -4,7 +4,7 @@ import { Truck, CheckCircle, Users, Plane, Plus, UserPlus, BarChart3, Calendar, 
 import { useAuth } from '../contexts/AuthContext'
 import AIInsightsCard from '../components/AIInsightsCard'
 import { useNavigate } from 'react-router-dom'
-import { getTransferDisplayName, getClientAndTravelerNames } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, getAirlineDisplay, hasRealFlight } from '../utils/transferUtils'
 
 const STATUS_ORDER = ['pending', 'assigned', 'enroute', 'waiting', 'in_progress', 'completed']
 const STATUS_LABELS = {
@@ -129,24 +129,29 @@ const Dashboard = () => {
       ).then(res => res.json())
       if (transfersResponse.success && transfersResponse.data) {
         const transfers = transfersResponse.data
+        // Only count transfers with real flights (exclude XX000, TBD placeholders)
         const flightsArriving = transfers.filter(t => {
+          if (!hasRealFlight(t.flight_details)) return false
           const arrivalTime = new Date(t.flight_details?.arrival_time || t.flight_details?.scheduled_arrival)
-          return arrivalTime >= startOfDay && arrivalTime <= endOfDay
+          return !isNaN(arrivalTime.getTime()) && arrivalTime >= startOfDay && arrivalTime <= endOfDay
         }).length
+        const inToday = (d) => {
+          if (!d) return false
+          const dt = new Date(d)
+          return !isNaN(dt.getTime()) && dt >= startOfDay && dt <= endOfDay
+        }
         const flightsDeparting = transfers.filter(t => {
-          const dep = t.flight_details?.departure_time || t.flight_details?.scheduled_departure
-          const retDep = t.return_flight_details?.departure_time
-          return [dep, retDep].some(d => {
-            if (!d) return false
-            const dt = new Date(d)
-            return dt >= startOfDay && dt <= endOfDay
-          })
+          const onwardDep = t.flight_details?.departure_time || t.flight_details?.scheduled_departure
+          const returnDep = t.return_flight_details?.departure_time
+          return (hasRealFlight(t.flight_details) && inToday(onwardDep)) ||
+                 (hasRealFlight(t.return_flight_details) && inToday(returnDep))
         }).length
-        const uniqueCustomers = new Set(transfers.map(t => t.customer_details?.name || t.customer_id)).size
+        const withRealFlights = transfers.filter(t => hasRealFlight(t.flight_details) || hasRealFlight(t.return_flight_details))
+        const uniqueCustomers = new Set(withRealFlights.map(t => t.customer_details?.name || t.customer_id)).size
         setTodayOverview({
           flightsArriving,
           flightsDeparting,
-          transfersScheduled: transfers.length,
+          transfersScheduled: withRealFlights.length,
           customersTraveling: uniqueCustomers
         })
       }
@@ -451,7 +456,7 @@ const Dashboard = () => {
                           {companyName || clientName || getTransferDisplayName(transfer)}
                         </p>
                         <p className="truncate text-sm text-muted-foreground">
-                          {transfer.flight_details?.airline} • {transfer.flight_details?.departure_airport} → {transfer.flight_details?.arrival_airport}
+                          {getAirlineDisplay(transfer.flight_details)} • {transfer.flight_details?.departure_airport} → {transfer.flight_details?.arrival_airport}
                           {travelerName && ` • ${travelerName}`}
                         </p>
                       </div>

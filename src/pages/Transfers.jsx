@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { getTransferDisplayName, getClientAndTravelerNames, getTransferStatusDisplay, formatDateTimeFriendly } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, getTransferStatusDisplay, formatDateTimeFriendly, getAirlineDisplay, hasRealFlight, getFlightNoDisplay } from '../utils/transferUtils'
 import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 
 const Transfers = () => {
@@ -662,14 +662,13 @@ const Transfers = () => {
                     <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                       Flight
                     </div>
-                    {(transfer.flight_details?.flight_no === 'XX000' ||
-                      transfer.flight_details?.flight_no === 'TBD') ? (
+                    {!hasRealFlight(transfer.flight_details) ? (
                       <button
                         type="button"
                         onClick={() => handleUpdateClientDetails(transfer)}
                         className="text-xs font-medium text-primary hover:underline cursor-pointer bg-transparent border-none p-0 text-left"
                       >
-                        Add flight details
+                        No flight detail
                       </button>
                     ) : (
                       <>
@@ -687,13 +686,11 @@ const Transfers = () => {
                         >
                           <Plane size={14} />
                           <span>
-                            {transfer.flight_details?.flight_no ||
-                              transfer.flight_details?.flight_number ||
-                              'N/A'}
+                            {getFlightNoDisplay(transfer.flight_details)}
                           </span>
                         </button>
                         <div className="text-xs text-muted-foreground">
-                          {transfer.flight_details?.airline || ''}
+                          {getAirlineDisplay(transfer.flight_details) || ''}
                         </div>
                         <div className="text-[11px] text-muted-foreground flex items-center gap-1">
                           <MapPin size={12} />

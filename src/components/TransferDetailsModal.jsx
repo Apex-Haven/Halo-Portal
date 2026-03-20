@@ -6,7 +6,7 @@ import { useApi } from '../hooks/useApi';
 import Drawer from './Drawer';
 import VendorDriverAssignment from './VendorDriverAssignment';
 import toast from 'react-hot-toast';
-import { getTransferDisplayName, getClientAndTravelerNames } from '../utils/transferUtils';
+import { getTransferDisplayName, getClientAndTravelerNames, getAirlineDisplay, hasRealFlight, getFlightNoDisplay, getFlightFieldDisplay, formatDateTimeFriendly } from '../utils/transferUtils';
 
 const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
   const { isDark } = useTheme();
@@ -142,26 +142,30 @@ const TransferDetailsModal = ({ transfer, onClose, onTransferUpdated }) => {
                 </h3>
               </div>
               <div className="text-sm text-gray-700 dark:text-gray-300">
-                <div className="mb-2">
-                  <strong className="text-gray-900 dark:text-white">Flight:</strong> {transfer.flight_details?.flight_no || transfer.flight_details?.flight_number || 'N/A'}
-                </div>
-                <div className="mb-2">
-                  <strong className="text-gray-900 dark:text-white">Airline:</strong> {transfer.flight_details?.airline || 'N/A'}
-                </div>
-                <div className="mb-2">
-                  <strong className="text-gray-900 dark:text-white">From:</strong> {transfer.flight_details?.departure_airport || 'N/A'}
-                </div>
-                <div className="mb-2">
-                  <strong className="text-gray-900 dark:text-white">To:</strong> {transfer.flight_details?.arrival_airport || 'N/A'}
-                </div>
-                {transfer.flight_details?.arrival_time && (
-                <div className="mb-2">
-                  <strong className="text-gray-900 dark:text-white">Arrival:</strong> {formatDate(transfer.flight_details.arrival_time)}
-                </div>
+                {!hasRealFlight(transfer.flight_details) ? (
+                  <p className="text-muted-foreground m-0">No flight detail</p>
+                ) : (
+                  <>
+                    <div className="mb-2">
+                      <strong className="text-gray-900 dark:text-white">Flight:</strong> {getFlightNoDisplay(transfer.flight_details)}
+                    </div>
+                    <div className="mb-2">
+                      <strong className="text-gray-900 dark:text-white">Airline:</strong> {getAirlineDisplay(transfer.flight_details)}
+                    </div>
+                    <div className="mb-2">
+                      <strong className="text-gray-900 dark:text-white">From:</strong> {getFlightFieldDisplay(transfer.flight_details?.departure_airport)}
+                    </div>
+                    <div className="mb-2">
+                      <strong className="text-gray-900 dark:text-white">To:</strong> {getFlightFieldDisplay(transfer.flight_details?.arrival_airport)}
+                    </div>
+                    <div className="mb-2">
+                      <strong className="text-gray-900 dark:text-white">Arrival:</strong> {transfer.flight_details?.arrival_time ? formatDateTimeFriendly(transfer.flight_details.arrival_time) : 'TBD'}
+                    </div>
+                    <div>
+                      <strong className="text-gray-900 dark:text-white">Status:</strong> {getFlightFieldDisplay(transfer.flight_details?.status)}
+                    </div>
+                  </>
                 )}
-                <div>
-                  <strong className="text-gray-900 dark:text-white">Status:</strong> {transfer.flight_details?.status || 'N/A'}
-                </div>
               </div>
             </div>
 
