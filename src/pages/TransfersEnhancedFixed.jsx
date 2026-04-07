@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, Fragment } from 'react'
 import { 
   Filter, Plus, Edit, Trash2, Plane, Truck, X, MapPin, Calendar, Search,
   User, Clock, Copy, CheckSquare, Square,
-  ChevronDown, ChevronRight, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle, RotateCcw, UserPlus
+  ChevronDown, ChevronRight, Users, Car, Navigation, CheckCircle, AlertTriangle, Building2, RefreshCw, Info, XCircle, RotateCcw, UserPlus, Layers
 } from 'lucide-react'
 import DatePicker from 'react-datepicker'
 import { startOfDay } from 'date-fns'
@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { getClientAndTravelerNames, getTransferStatusDisplay, getAirlineDisplay, hasRealFlight, getFlightNoDisplay, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatDateFriendly } from '../utils/transferUtils'
+import { getClientAndTravelerNames, getCompanyName, getDelegateDisplayName, getTransferStatusDisplay, getUniqueTravelerCountAcrossTransfers, getAirlineDisplay, hasRealFlight, getFlightNoDisplay, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateFriendly, formatTransferPickupLocal, formatReturnPickupLocal, formatFlightDepartureLocal, formatFlightArrivalLocal, formatDateTimeAtAirport, expandTransferToCardRows } from '../utils/transferUtils'
 import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 import Dropdown from '../components/Dropdown'
 import Drawer from '../components/Drawer'
@@ -28,6 +28,7 @@ const TransfersEnhanced = () => {
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [viewMode, setViewMode] = useState('cards')
+  const [groupByCompany, setGroupByCompany] = useState(true)
   const [sortBy, setSortBy] = useState('company') // 'company' | 'latest'
   
   // Bulk operations state
@@ -327,7 +328,7 @@ const TransfersEnhanced = () => {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [companyFilter, travelerFilter, statusFilter, sortBy])
+  }, [companyFilter, travelerFilter, statusFilter, sortBy, groupByCompany, searchTerm])
 
   useEffect(() => {
     if ((showBulkVendorModal || showBulkDriverModal || showBulkReturnDriverModal) && canManageTransfers) {
@@ -531,6 +532,14 @@ const TransfersEnhanced = () => {
       setSelectedTransfers(filteredTransfers.map(t => t._id))
     } else {
       setSelectedTransfers([])
+    }
+  }
+
+  const handleSelectGroup = (transferIds, selected) => {
+    if (selected) {
+      setSelectedTransfers(prev => [...new Set([...prev, ...transferIds])])
+    } else {
+      setSelectedTransfers(prev => prev.filter(id => !transferIds.includes(id)))
     }
   }
 
@@ -873,7 +882,7 @@ const TransfersEnhanced = () => {
           'Pickup Location': transfer.transfer_details?.pickup_location,
           'Drop Location': transfer.transfer_details?.drop_location,
           'Status': getTransferStatusDisplay(transfer).label,
-          'Pickup Time': formatDateTimeFriendly(transfer.transfer_details?.estimated_pickup_time),
+          'Pickup Time': formatTransferPickupLocal(transfer),
           'Vendor': transfer.vendor_details?.vendor_name,
           'Driver': transfer.assigned_driver_details?.name,
           'Flight': getFlightNoDisplay(transfer.flight_details),
@@ -932,10 +941,14 @@ const TransfersEnhanced = () => {
       const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
       const apexId = (transfer._id || '').toLowerCase()
       const flightNo = (transfer.flight_details?.flight_no || '').toLowerCase()
+      const delegateMatch = (transfer.delegates || []).some((d) =>
+        getDelegateDisplayName(d).toLowerCase().includes(term)
+      )
       const matchesSearch =
         (companyName || '').toLowerCase().includes(term) ||
         (clientName || '').toLowerCase().includes(term) ||
         (travelerName || '').toLowerCase().includes(term) ||
+        delegateMatch ||
         apexId.includes(term) ||
         flightNo.includes(term)
       if (!matchesSearch) return false
@@ -964,12 +977,53 @@ const TransfersEnhanced = () => {
            new Date(b.transfer_details?.estimated_pickup_time || 0)
   })
 
-  // Pagination (use sorted order for both cards and timeline)
-  const totalPages = Math.max(1, Math.ceil(filteredTransfers.length / perPage))
+  /** One list card per traveler when a booking has same-car delegates (merged sync). */
+  const expandedCardRows = useMemo(
+    () => sortedTransfers.flatMap((t) => expandTransferToCardRows(t)),
+    [sortedTransfers]
+  )
+
+  /** Group transfers that share the same company (customer_details / traveler_details company_name). Transfers without a company name stay as one transfer per group. */
+  const companyGroups = (() => {
+    const map = new Map()
+    for (const t of sortedTransfers) {
+      const raw = getCompanyName(t)?.trim()
+      const key = raw || `__solo_${t._id}`
+      if (!map.has(key)) {
+        const names = getClientAndTravelerNames(t)
+        map.set(key, {
+          key,
+          companyDisplayName: raw || names.companyName || names.clientName || 'Unknown',
+          transfers: []
+        })
+      }
+      map.get(key).transfers.push(t)
+    }
+    return [...map.values()]
+  })()
+
+  const useGroupedCards = groupByCompany && viewMode === 'cards'
+  // Pagination: by company group when grouped; else by expanded cards (one row per traveler)
+  const totalPages = Math.max(
+    1,
+    Math.ceil(
+      (useGroupedCards
+        ? companyGroups.length
+        : viewMode === 'timeline'
+          ? sortedTransfers.length
+          : expandedCardRows.length) / perPage
+    )
+  )
   const startIndex = (currentPage - 1) * perPage
   const endIndex = startIndex + perPage
   const paginatedTransfers = sortedTransfers.slice(startIndex, endIndex)
+  const paginatedExpandedRows = expandedCardRows.slice(startIndex, endIndex)
+  const paginatedCompanyGroups = companyGroups.slice(startIndex, endIndex)
   const sortedTransfersPaginated = paginatedTransfers
+
+  useEffect(() => {
+    setCurrentPage(p => Math.min(p, totalPages))
+  }, [totalPages])
 
   // Status options – aligned with project flow (enroute merged into in_progress)
   const statusColors = {
@@ -991,15 +1045,18 @@ const TransfersEnhanced = () => {
   }
 
   // Minimal transfer card – company as hero, traveler below, client-friendly status
-  const TransferCard = ({ transfer }) => {
+  const TransferCard = ({ transfer, cardRow }) => {
     const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
     const status = transfer.transfer_details?.transfer_status || 'pending'
     const { label: statusLabel, statusKey } = getTransferStatusDisplay(transfer)
     const isSelected = selectedTransfers.includes(transfer._id)
     const hasReturnTransfer = transfer.return_transfer_details || transfer.return_flight_details
 
-    // Traveler: prefer traveler_details.name, fallback to customer name when it's a real value
-    const displayTraveler = travelerName || (clientName && clientName !== 'N/A' ? clientName : null)
+    // One card per traveler when cardRow is set (same-car merge); else primary traveler
+    const displayTraveler =
+      cardRow?.cardTravelerLabel ??
+      (travelerName || (clientName && clientName !== 'N/A' ? clientName : null))
+    const sameCarMulti = cardRow && cardRow.sameCarGroupSize > 1
 
     return (
       <div 
@@ -1041,6 +1098,11 @@ const TransfersEnhanced = () => {
               <p className="text-sm text-foreground/80 truncate mt-1 font-medium">
                 {displayTraveler || '—'}
               </p>
+              {sameCarMulti && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Same car · traveler {cardRow.sameCarIndex + 1} of {cardRow.sameCarGroupSize}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -1050,6 +1112,11 @@ const TransfersEnhanced = () => {
           <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColor(statusKey)}`}>
             {statusLabel}
           </span>
+          {sameCarMulti && (
+            <span className="text-xs bg-teal-500/15 text-teal-700 dark:text-teal-300 px-2 py-0.5 rounded font-medium border border-teal-500/25">
+              Same booking
+            </span>
+          )}
           {transfer.priority === 'vip' && (
             <span className="text-xs bg-purple-500/20 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded font-medium">VIP</span>
           )}
@@ -1057,6 +1124,123 @@ const TransfersEnhanced = () => {
           {hasReturnTransfer && (
             <span className="text-xs bg-blue-500/20 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded font-medium">Round Trip</span>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  /** One card per company: header + stacked rows (traveler, status chips). Only used when group-by-company is on and the group has 2+ transfers. */
+  const CompanyGroupCard = ({ group }) => {
+    const { companyDisplayName, transfers } = group
+    const ids = transfers.map(t => t._id)
+    const allSelected = ids.length > 0 && ids.every(id => selectedTransfers.includes(id))
+    const someSelected = ids.some(id => selectedTransfers.includes(id))
+
+    return (
+      <div className="group relative bg-card rounded-xl border overflow-hidden transition-all hover:border-primary/50 hover:shadow-md border-border">
+        <div className="px-4 pt-4 pb-3 border-b border-border bg-muted/20">
+          <div className="flex items-start gap-3 min-w-0">
+            {canManageTransfers && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleSelectGroup(ids, !allSelected)
+                }}
+                className={`flex-shrink-0 mt-0.5 transition-opacity ${allSelected || someSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                title={allSelected ? 'Deselect group' : 'Select group'}
+              >
+                {allSelected ? (
+                  <CheckSquare size={18} className="text-primary" />
+                ) : someSelected ? (
+                  <div className="w-[18px] h-[18px] rounded border-2 border-primary bg-primary/25" aria-hidden />
+                ) : (
+                  <Square size={18} className="text-muted-foreground" />
+                )}
+              </button>
+            )}
+            <Building2 className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1 pr-6">
+              <h3 className="text-lg font-bold text-foreground truncate">{companyDisplayName}</h3>
+              <p className="text-xs text-muted-foreground">
+                {transfers.flatMap((t) => expandTransferToCardRows(t)).length} travelers
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="divide-y divide-border">
+          {transfers.flatMap((transfer) => expandTransferToCardRows(transfer)).map((row) => {
+            const transfer = row.transfer
+            const { label: statusLabel, statusKey } = getTransferStatusDisplay(transfer)
+            const isSelected = selectedTransfers.includes(transfer._id)
+            const displayTraveler = row.cardTravelerLabel
+            const sameCarMulti = row.sameCarGroupSize > 1
+            const hasReturnTransfer = transfer.return_transfer_details || transfer.return_flight_details
+            return (
+              <div
+                key={row.cardRowKey}
+                className={`relative px-4 py-3 flex flex-col gap-1.5 hover:bg-muted/40 cursor-pointer transition-colors ${
+                  isSelected ? 'bg-primary/5' : ''
+                }`}
+                onClick={() => { setSelectedTransfer(transfer); setShowDetailsModal(true) }}
+              >
+                {canManageTransfers && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteClick(transfer) }}
+                    className="absolute top-2 right-2 p-1.5 rounded-lg bg-card/90 border border-border opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all z-10"
+                    title="Delete"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+                <div className="flex items-start gap-2 pr-12">
+                  {canManageTransfers && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleTransferSelect(transfer._id, !isSelected) }}
+                      className={`flex-shrink-0 mt-0.5 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                    >
+                      {isSelected ? (
+                        <CheckSquare size={16} className="text-primary" />
+                      ) : (
+                        <Square size={16} className="text-muted-foreground" />
+                      )}
+                    </button>
+                  )}
+                  <div className="min-w-0 flex-1 flex flex-col gap-2">
+                    <div className="font-medium text-foreground leading-snug">{displayTraveler || '—'}</div>
+                    {sameCarMulti && (
+                      <p className="text-xs text-muted-foreground">
+                        Same car · {row.sameCarIndex + 1} of {row.sameCarGroupSize}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${getStatusColor(statusKey)}`}>
+                        {statusLabel}
+                      </span>
+                      {sameCarMulti && (
+                        <span className="text-xs bg-teal-500/15 text-teal-700 dark:text-teal-300 px-2 py-0.5 rounded font-medium border border-teal-500/25">
+                          Same booking
+                        </span>
+                      )}
+                      {transfer.priority === 'vip' && (
+                        <span className="text-xs bg-purple-500/20 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded font-medium">VIP</span>
+                      )}
+                      {transfer.priority === 'high' && (
+                        <span className="inline-flex items-center" title="High priority">
+                          <AlertTriangle size={12} className="text-amber-500" />
+                        </span>
+                      )}
+                      {hasReturnTransfer && (
+                        <span className="text-xs bg-blue-500/20 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded font-medium">Round Trip</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
     )
@@ -1114,7 +1298,7 @@ const TransfersEnhanced = () => {
                   )}
                   {formatDateFriendly(date)}
                   <span className="text-sm text-muted-foreground font-normal">
-                    ({dayTransfers.length} transfers)
+                    ({dayTransfers.flatMap((t) => expandTransferToCardRows(t)).length} travelers)
                   </span>
                 </h3>
               </button>
@@ -1123,8 +1307,8 @@ const TransfersEnhanced = () => {
             {!isCollapsed && (
             <div className="p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
-                {dayTransfers.map((transfer) => (
-                  <TransferCard key={transfer._id} transfer={transfer} />
+                {dayTransfers.flatMap((transfer) => expandTransferToCardRows(transfer)).map((row) => (
+                  <TransferCard key={row.cardRowKey} transfer={row.transfer} cardRow={row} />
                 ))}
               </div>
             </div>
@@ -1148,15 +1332,15 @@ const TransfersEnhanced = () => {
                 )}
                 Not decided yet
                 <span className="text-sm text-muted-foreground font-normal">
-                  ({noDate.length} transfers)
+                  ({noDate.flatMap((t) => expandTransferToCardRows(t)).length} travelers)
                 </span>
               </h3>
             </button>
             {!collapsedTimelineDates.has(NOT_DECIDED_KEY) && (
               <div className="p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
-                  {noDate.map((transfer) => (
-                    <TransferCard key={transfer._id} transfer={transfer} />
+                  {noDate.flatMap((transfer) => expandTransferToCardRows(transfer)).map((row) => (
+                    <TransferCard key={row.cardRowKey} transfer={row.transfer} cardRow={row} />
                   ))}
                 </div>
               </div>
@@ -1201,11 +1385,30 @@ const TransfersEnhanced = () => {
                   Sync Transfers
                 </button>
               )}
-              <div className="flex items-center gap-2">
-                <div className="flex items-center bg-muted rounded-lg p-1">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  type="button"
+                  disabled={viewMode !== 'cards'}
+                  onClick={() => setGroupByCompany(g => !g)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors shrink-0 disabled:cursor-not-allowed disabled:opacity-50 ${
+                    groupByCompany
+                      ? 'bg-primary/10 border-primary/40 text-primary'
+                      : 'bg-card border-border text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  }`}
+                  title={
+                    viewMode === 'cards'
+                      ? 'Combine transfers that share the same company into one card'
+                      : 'Grouping by company applies to Cards view only — switch to Cards to use this option.'
+                  }
+                >
+                  <Users size={16} className="shrink-0" />
+                  By company
+                </button>
+                <div className="flex items-center bg-muted rounded-lg p-1 shrink-0">
                   {['cards', 'timeline'].map(mode => (
                     <button
                       key={mode}
+                      type="button"
                       onClick={() => setViewMode(mode)}
                       className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                         viewMode === mode 
@@ -1221,16 +1424,78 @@ const TransfersEnhanced = () => {
             </div>
           </div>
 
-          {/* Stats – spread across full width */}
+          {/* Stats: transfers + travelers — compact KPI rows, status accent, no harsh column split */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6 w-full">
             {statusOptions.map(option => {
-              const count = filteredTransfers.filter(t =>
-                (t.transfer_details?.transfer_status || 'pending') === option.value
-              ).length
+              const inStatus = filteredTransfers.filter((t) =>
+                normalizeStatus(t.transfer_details?.transfer_status || 'pending') === option.value
+              )
+              const count = inStatus.length
+              const travelerSum = getUniqueTravelerCountAcrossTransfers(inStatus)
+              const accent = {
+                pending: 'border-l-slate-400 dark:border-l-slate-500',
+                assigned: 'border-l-blue-500 dark:border-l-blue-400',
+                in_progress: 'border-l-violet-500 dark:border-l-violet-400',
+                completed: 'border-l-emerald-500 dark:border-l-emerald-400',
+                cancelled: 'border-l-red-500 dark:border-l-red-400'
+              }[option.value] || 'border-l-border'
+              const iconTintPrimary = {
+                pending: 'bg-slate-500/12 text-slate-600 dark:text-slate-300',
+                assigned: 'bg-blue-500/12 text-blue-600 dark:text-blue-400',
+                in_progress: 'bg-violet-500/12 text-violet-600 dark:text-violet-400',
+                completed: 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400',
+                cancelled: 'bg-red-500/12 text-red-600 dark:text-red-400'
+              }[option.value] || 'bg-muted text-muted-foreground'
+              const iconTintSecondary = 'bg-muted/80 text-muted-foreground dark:bg-muted/50 dark:text-foreground/70'
+
               return (
-                <div key={option.value} className="bg-card rounded-lg border border-border p-3 sm:p-4 min-w-0">
-                  <div className="text-xl sm:text-2xl font-bold text-foreground">{count}</div>
-                  <div className="text-xs sm:text-sm text-muted-foreground">{option.label}</div>
+                <div
+                  key={option.value}
+                  className={`relative min-w-0 rounded-2xl border border-border/70 bg-card shadow-sm transition-shadow hover:shadow-md ${accent} border-l-[3px]`}
+                >
+                  <div className="px-4 pt-4 pb-1">
+                    <p className="text-[13px] font-semibold text-foreground tracking-tight leading-snug">
+                      {option.label}
+                    </p>
+                  </div>
+                  <div className="space-y-0 px-4 pb-4 pt-2">
+                    <div className="flex items-center gap-3 py-2.5 first:pt-0">
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconTintPrimary}`}
+                        aria-hidden
+                      >
+                        <Layers className="h-[18px] w-[18px] opacity-90" strokeWidth={2} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-medium text-muted-foreground leading-none mb-1">
+                          Transfers
+                        </p>
+                        <p className="text-2xl font-bold tabular-nums tracking-tight text-foreground leading-none">
+                          {count}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mx-0 border-t border-border/50" />
+                    <div
+                      className="flex items-center gap-3 py-2.5"
+                      title="Distinct people on these transfers (primary + same car). Each traveler counted once even if sharing a vehicle."
+                    >
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconTintSecondary}`}
+                        aria-hidden
+                      >
+                        <Users className="h-[18px] w-[18px] opacity-90" strokeWidth={2} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-medium text-muted-foreground leading-none mb-1">
+                          Travelers
+                        </p>
+                        <p className="text-2xl font-bold tabular-nums tracking-tight text-foreground leading-none">
+                          {travelerSum}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )
             })}
@@ -1264,6 +1529,8 @@ const TransfersEnhanced = () => {
                 ]}
                 placeholder="Select company"
                 minWidth="100%"
+                searchable
+                searchPlaceholder="Search companies..."
               />
             </div>
             <div className="flex-1 min-w-[180px] sm:min-w-[200px]">
@@ -1277,6 +1544,8 @@ const TransfersEnhanced = () => {
                 ]}
                 placeholder="Select traveler"
                 minWidth="100%"
+                searchable
+                searchPlaceholder="Search travelers..."
               />
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -1472,9 +1741,21 @@ const TransfersEnhanced = () => {
         ) : (
           <div className="w-full space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
-              {paginatedTransfers.map(transfer => (
-                <TransferCard key={transfer._id} transfer={transfer} />
-              ))}
+              {useGroupedCards
+                ? paginatedCompanyGroups.map((group) =>
+                    group.transfers.length === 1 ? (
+                      <Fragment key={group.key}>
+                        {expandTransferToCardRows(group.transfers[0]).map((row) => (
+                          <TransferCard key={row.cardRowKey} transfer={row.transfer} cardRow={row} />
+                        ))}
+                      </Fragment>
+                    ) : (
+                      <CompanyGroupCard key={group.key} group={group} />
+                    )
+                  )
+                : paginatedExpandedRows.map((row) => (
+                    <TransferCard key={row.cardRowKey} transfer={row.transfer} cardRow={row} />
+                  ))}
             </div>
           </div>
         )}
@@ -1483,7 +1764,14 @@ const TransfersEnhanced = () => {
         {!loading && filteredTransfers.length > 0 && (
           <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 py-4 border-t border-border">
             <p className="text-sm text-muted-foreground">
-              Showing {startIndex + 1}–{Math.min(endIndex, filteredTransfers.length)} of {filteredTransfers.length}
+              {groupByCompany && viewMode === 'cards' ? (
+                <>
+                  Showing {startIndex + 1}–{Math.min(endIndex, companyGroups.length)} of {companyGroups.length} company group{companyGroups.length !== 1 ? 's' : ''}
+                  <span className="text-muted-foreground/80"> ({sortedTransfers.length} transfers)</span>
+                </>
+              ) : (
+                <>Showing {startIndex + 1}–{Math.min(endIndex, filteredTransfers.length)} of {filteredTransfers.length}</>
+              )}
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -1560,6 +1848,8 @@ const TransfersEnhanced = () => {
                       ]}
                       placeholder="Select client"
                       minWidth="100%"
+                      searchable
+                      searchPlaceholder="Search clients..."
                     />
                     {loadingClients && <p className="text-xs text-muted-foreground mt-1">Loading clients...</p>}
                     <p className="text-xs text-muted-foreground mt-1">All generated transfers will belong to this client account.</p>
@@ -1707,6 +1997,8 @@ const TransfersEnhanced = () => {
                     ]}
                     placeholder={loadingVendors ? 'Loading vendors...' : 'Select a vendor'}
                     minWidth="100%"
+                    searchable
+                    searchPlaceholder="Search vendors..."
                   />
                   {vendors.length === 0 && !loadingVendors && (
                     <p className="text-xs text-muted-foreground mt-1">No vendors found. Add vendors in User Management first.</p>
@@ -1795,6 +2087,8 @@ const TransfersEnhanced = () => {
                       ]}
                       placeholder={!bulkVendorIdForDriver ? 'Loading...' : (loadingDrivers ? 'Loading...' : 'Select driver')}
                       minWidth="100%"
+                      searchable
+                      searchPlaceholder="Search drivers..."
                     />
                     {bulkVendorIdForDriver && drivers.length === 0 && !loadingDrivers && (
                       <p className="text-xs text-muted-foreground mt-1">No drivers found for this vendor.</p>
@@ -1859,6 +2153,8 @@ const TransfersEnhanced = () => {
                       ]}
                       placeholder="Select vendor"
                       minWidth="100%"
+                      searchable
+                      searchPlaceholder="Search vendors..."
                     />
                   </div>
                   <div>
@@ -1877,6 +2173,8 @@ const TransfersEnhanced = () => {
                       ]}
                       placeholder={!bulkVendorIdForReturnDriver ? 'Loading...' : (loadingDrivers ? 'Loading...' : 'Select driver')}
                       minWidth="100%"
+                      searchable
+                      searchPlaceholder="Search drivers..."
                     />
                     {!bulkVendorIdForReturnDriver && (
                       <p className="text-xs text-muted-foreground mt-1">Select vendor first to load drivers.</p>
@@ -2188,8 +2486,8 @@ const TransfersEnhanced = () => {
                     <h4 className="font-semibold text-foreground mb-4">{fetchedFlightData.flight} – {fetchedFlightData.airlineName || fetchedFlightData.airlineCode}</h4>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div><span className="text-muted-foreground">Route:</span> <span className="text-foreground">{fetchedFlightData.departureAirport} → {fetchedFlightData.arrivalAirport}</span></div>
-                      <div><span className="text-muted-foreground">Departure:</span> <span className="text-foreground">{formatDateTimeFriendly(fetchedFlightData.departureTime)}</span></div>
-                      <div><span className="text-muted-foreground">Arrival:</span> <span className="text-foreground">{formatDateTimeFriendly(fetchedFlightData.arrivalTime)}</span></div>
+                      <div><span className="text-muted-foreground">Departure:</span> <span className="text-foreground">{formatDateTimeAtAirport(fetchedFlightData.departureTime, fetchedFlightData.departureAirport)}</span></div>
+                      <div><span className="text-muted-foreground">Arrival:</span> <span className="text-foreground">{formatDateTimeAtAirport(fetchedFlightData.arrivalTime, fetchedFlightData.arrivalAirport)}</span></div>
                       <div className="col-span-2">
                         <label className="block text-xs font-medium text-foreground mb-1">Terminal</label>
                         <input
@@ -2297,7 +2595,7 @@ const TransfersEnhanced = () => {
                     <div>
                       <span className="text-muted-foreground text-sm">Pickup Time</span>
                       <p className="font-medium text-foreground">
-                        {formatDateTimeFriendly(selectedTransfer.transfer_details?.estimated_pickup_time)}
+                        {formatTransferPickupLocal(selectedTransfer)}
                       </p>
                     </div>
                     <div className="grid grid-cols-2 gap-4 pt-2">
@@ -2320,7 +2618,8 @@ const TransfersEnhanced = () => {
                         <div className="grid grid-cols-2 gap-2 text-sm">
                           <div><strong>Flight:</strong> {getFlightNoDisplay(selectedTransfer.flight_details)}</div>
                           <div><strong>Airline:</strong> {getAirlineDisplay(selectedTransfer.flight_details)}</div>
-                          <div><strong>Departure:</strong> {selectedTransfer.flight_details?.departure_time ? formatDateTimeFriendly(selectedTransfer.flight_details.departure_time) : 'TBD'}</div>
+                          <div><strong>Departure:</strong> {selectedTransfer.flight_details?.departure_time ? formatFlightDepartureLocal(selectedTransfer.flight_details) : 'TBD'}</div>
+                          <div><strong>Arrival:</strong> {selectedTransfer.flight_details?.arrival_time ? formatFlightArrivalLocal(selectedTransfer.flight_details) : 'TBD'}</div>
                           <div><strong>Terminal:</strong> {getFlightFieldDisplay(selectedTransfer.flight_details?.terminal)}</div>
                         </div>
                       </div>
@@ -2380,7 +2679,7 @@ const TransfersEnhanced = () => {
                       <div>
                         <span className="text-muted-foreground text-sm">Pickup Time</span>
                         <p className="font-medium text-foreground">
-                          {formatDateTimeFriendly(selectedTransfer.return_transfer_details?.estimated_pickup_time)}
+                          {formatReturnPickupLocal(selectedTransfer)}
                         </p>
                       </div>
                       <div className="grid grid-cols-2 gap-4 pt-2">
@@ -2403,7 +2702,7 @@ const TransfersEnhanced = () => {
                           <div className="grid grid-cols-2 gap-2 text-sm">
                             <div><strong>Flight:</strong> {getFlightNoDisplay(selectedTransfer.return_flight_details)}</div>
                             <div><strong>Airline:</strong> {getAirlineDisplay(selectedTransfer.return_flight_details)}</div>
-                            <div><strong>Departure:</strong> {selectedTransfer.return_flight_details?.departure_time ? formatDateTimeFriendly(selectedTransfer.return_flight_details.departure_time) : 'TBD'}</div>
+                            <div><strong>Departure:</strong> {selectedTransfer.return_flight_details?.departure_time ? formatFlightDepartureLocal(selectedTransfer.return_flight_details) : 'TBD'}</div>
                             <div><strong>Terminal:</strong> {getFlightFieldDisplay(selectedTransfer.return_flight_details?.terminal)}</div>
                           </div>
                         </div>
@@ -2447,9 +2746,7 @@ const TransfersEnhanced = () => {
                       )}
                       {(selectedTransfer.delegates || []).map((d, i) => {
                         const tid = d.traveler_id?._id || d.traveler_id;
-                        const name = d.traveler_id?.profile
-                          ? [d.traveler_id.profile.firstName, d.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
-                          : d.travelerName || d.traveler_id?.email || 'Traveler';
+                        const name = getDelegateDisplayName(d);
                         const canEdit = isRole('SUPER_ADMIN') || isRole('ADMIN') || isRole('OPERATIONS_MANAGER');
                         return (
                           <div key={i} className="flex items-center justify-between gap-2 group">

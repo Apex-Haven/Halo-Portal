@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Truck, CheckCircle, Users, Plane, Plus, UserPlus, BarChart3, Calendar, Building2, UserCheck, Briefcase, ArrowDownCircle, ArrowUpCircle, Navigation, ChevronRight } from 'lucide-react'
+import { Truck, CheckCircle, Users, Plane, Plus, UserPlus, BarChart3, Calendar, Building2, UserCheck, Briefcase, ArrowDownCircle, ArrowUpCircle, Navigation, ChevronRight, Clock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import AIInsightsCard from '../components/AIInsightsCard'
 import { useNavigate } from 'react-router-dom'
@@ -9,44 +9,126 @@ import { getTransferDisplayName, getClientAndTravelerNames, getAirlineDisplay, h
 const STATUS_ORDER = ['pending', 'assigned', 'enroute', 'waiting', 'in_progress', 'completed']
 const STATUS_LABELS = {
   pending: 'Pending',
-  assigned: 'Assigned',
+  assigned: 'Driver assigned',
   enroute: 'En Route',
   waiting: 'Waiting',
   in_progress: 'In Progress',
   completed: 'Completed'
 }
 
-const StatCard = ({ icon: Icon, label, value, loading, onClick, accent = 'primary' }) => {
-  const accentMap = {
-    primary: 'bg-primary',
-    success: 'bg-emerald-500',
-    blue: 'bg-blue-500',
-    amber: 'bg-amber-500'
-  }
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      onClick={onClick}
-      className={`group relative overflow-hidden rounded-xl border border-border bg-card p-5 transition-all duration-200 hover:border-primary/30 hover:shadow-md ${onClick ? 'cursor-pointer' : ''}`}
-    >
-      <div className={`absolute left-0 top-0 h-full w-1 ${accentMap[accent] || accentMap.primary}`} />
-      <div className="flex items-start justify-between pl-1">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/80">{label}</p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
-            {loading ? (
-              <span className="inline-block h-8 w-12 animate-pulse rounded bg-muted" />
-            ) : (
-              value
-            )}
-          </p>
-        </div>
-        <div className="rounded-lg bg-muted/50 p-2.5 transition-colors group-hover:bg-primary/10">
-          <Icon size={20} className="text-muted-foreground group-hover:text-primary" />
+/** Top-row KPIs — large gradient tiles (replaces thin left-border stat cards). */
+const HeroKpiTile = ({
+  icon: Icon,
+  label,
+  value,
+  loading,
+  onClick,
+  gradientClass,
+  iconWrapClass,
+  transitionDelay = 0
+}) => (
+  <motion.button
+    type="button"
+    initial={{ opacity: 0, y: 12 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.35, delay: transitionDelay }}
+    onClick={onClick}
+    className={`group relative min-h-[148px] w-full overflow-hidden rounded-2xl border border-border/50 p-6 text-left shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg sm:min-h-[160px] sm:p-7 ${gradientClass}`}
+  >
+    <div className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full bg-white/10 opacity-40 blur-2xl dark:bg-white/5" />
+    <div className="relative flex h-full flex-col justify-between gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/90">{label}</p>
+        <div className="mt-3">
+          {loading ? (
+            <span className="inline-block h-11 w-20 animate-pulse rounded-lg bg-muted/90 sm:h-12 sm:w-24" />
+          ) : (
+            <p className="text-4xl font-bold tabular-nums tracking-tight text-foreground sm:text-5xl">{value}</p>
+          )}
         </div>
       </div>
-    </motion.div>
+      <div
+        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ring-1 ring-border/30 transition-transform group-hover:scale-105 sm:h-14 sm:w-14 ${iconWrapClass}`}
+      >
+        <Icon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={1.75} />
+      </div>
+    </div>
+  </motion.button>
+)
+
+/** Large dashboard tile for network / platform counts (not a compact stat card). */
+const NetworkBigTile = ({
+  label,
+  description,
+  value,
+  loading,
+  onClick,
+  icon: Icon,
+  gradientClass,
+  iconWrapClass,
+  transitionDelay = 0,
+  emphasis = false
+}) => {
+  const hasDesc = Boolean(description)
+  const sizeClass = emphasis
+    ? hasDesc
+      ? 'min-h-[240px] sm:min-h-[280px]'
+      : 'min-h-[220px] sm:min-h-[260px]'
+    : hasDesc
+      ? 'min-h-[210px] sm:min-h-[240px]'
+      : 'min-h-[190px] sm:min-h-[220px]'
+  return (
+  <motion.button
+    type="button"
+    initial={{ opacity: 0, y: 16 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.4, delay: transitionDelay, ease: [0.25, 0.46, 0.45, 0.94] }}
+    onClick={onClick}
+    className={`group relative flex w-full flex-col rounded-2xl border border-border/60 text-left shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-xl ${sizeClass} ${gradientClass}`}
+  >
+    {/* Glow clipped inside rounded rect only — outer button stays overflow-visible so footer is never cut off */}
+    <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+      <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-gradient-to-br from-white/15 to-transparent opacity-50 blur-3xl dark:from-white/5" />
+    </div>
+    <div className="relative z-[1] flex flex-1 flex-col gap-4 p-7 pb-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 sm:p-9 sm:pb-6">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium tracking-wide text-muted-foreground">{label}</p>
+        <div className="mt-2">
+          {loading ? (
+            <span
+              className={`inline-block animate-pulse rounded-xl bg-muted/80 ${emphasis ? 'h-16 w-36 sm:h-20 sm:w-44' : 'h-14 w-28 sm:h-16 sm:w-36'}`}
+            />
+          ) : typeof value === 'string' ? (
+            <p
+              className={`line-clamp-2 font-bold leading-tight tracking-tight text-foreground ${emphasis ? 'text-3xl sm:text-4xl lg:text-5xl' : 'text-2xl sm:text-3xl lg:text-4xl'}`}
+            >
+              {value || '—'}
+            </p>
+          ) : (
+            <p
+              className={`font-bold tracking-tight tabular-nums text-foreground ${emphasis ? 'text-5xl sm:text-6xl lg:text-7xl xl:text-8xl' : 'text-4xl sm:text-5xl lg:text-6xl'}`}
+            >
+              {typeof value === 'number' ? value.toLocaleString() : value}
+            </p>
+          )}
+        </div>
+        {description ? (
+          <p className="mt-3 max-w-[18rem] text-xs leading-snug text-muted-foreground sm:text-sm">{description}</p>
+        ) : null}
+      </div>
+      <div
+        className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl ring-1 ring-border/40 backdrop-blur-sm transition-transform duration-300 group-hover:scale-105 sm:h-[4.5rem] sm:w-[4.5rem] ${iconWrapClass}`}
+      >
+        <Icon className="h-8 w-8 sm:h-9 sm:w-9" strokeWidth={1.5} />
+      </div>
+    </div>
+    <div className="relative z-[2] mt-auto flex shrink-0 border-t border-border/40 bg-muted/20 px-7 py-3 sm:px-9 sm:py-3.5">
+      <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+        Open
+        <ChevronRight size={16} className="text-foreground/90 transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </div>
+  </motion.button>
   )
 }
 
@@ -78,7 +160,7 @@ const Dashboard = () => {
     } else {
       fetchTodayOverview()
     }
-  }, [user, isAdmin])
+  }, [user, isAdmin, isClient])
 
   const fetchDashboardData = async () => {
     try {
@@ -87,9 +169,10 @@ const Dashboard = () => {
       const token = localStorage.getItem('token')
       const headers = { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) }
       const [statsResponse, transfersResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/transfers/stats`, { headers }).then(res => res.json()),
-        fetch(`${API_BASE_URL}/transfers?limit=6`, { headers }).then(res => res.json())
+        fetch(`${API_BASE_URL}/transfers/stats`, { headers }).then((res) => res.json()),
+        fetch(`${API_BASE_URL}/transfers?limit=6`, { headers }).then((res) => res.json())
       ])
+
       if (statsResponse.success) setStats(statsResponse.data)
       if (transfersResponse.success) setRecentTransfers(transfersResponse.data || [])
     } catch (error) {
@@ -166,7 +249,7 @@ const Dashboard = () => {
   const todayDate = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-7xl">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -8 }}
@@ -177,46 +260,182 @@ const Dashboard = () => {
           Dashboard
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isAdmin ? 'Event operations at a glance' : 'Your transfers and travelers'}
+          {isAdmin ? 'Event operations at a glance' : 'Transfers, travelers, and guest companies at a glance'}
         </p>
         <p className="mt-1 text-xs text-muted-foreground/70">{todayDate}</p>
       </motion.div>
 
-      {/* Primary KPIs */}
-      <div className="mb-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
+      {/* Client primary metrics: transfers (scoped to you), travelers, guest companies on traveler profiles */}
+      {isClient && (
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-10"
+        >
+          <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
+            <NetworkBigTile
+              label="Transfers"
+              value={stats?.total ?? 0}
+              loading={loading}
+              onClick={() => navigate('/transfers')}
+              icon={Truck}
+              emphasis
+              transitionDelay={0}
+              gradientClass="bg-gradient-to-br from-blue-500/[0.16] via-card to-indigo-600/[0.1] dark:from-blue-500/18 dark:via-card dark:to-indigo-950/40"
+              iconWrapClass="bg-blue-500/20 text-blue-700 dark:text-blue-300"
+            />
+            <NetworkBigTile
+              label="Travelers"
+              description="People on your transfers: primary guest plus travelers in the same car."
+              value={
+                stats?.travelerSlotsOnTransfers != null
+                  ? stats.travelerSlotsOnTransfers
+                  : (stats?.travelers ?? stats?.rosterTravelers ?? 0)
+              }
+              loading={loading}
+              onClick={() => navigate('/travelers')}
+              icon={UserCheck}
+              emphasis
+              transitionDelay={0.05}
+              gradientClass="bg-gradient-to-br from-violet-500/[0.14] via-card to-indigo-600/[0.06] dark:from-violet-500/18 dark:via-card dark:to-indigo-950/35"
+              iconWrapClass="bg-violet-500/20 text-violet-700 dark:text-violet-300"
+            />
+            <NetworkBigTile
+              label="Guest companies"
+              value={stats?.guestCompanies ?? 0}
+              loading={loading}
+              onClick={() => navigate('/travelers')}
+              icon={Building2}
+              emphasis
+              transitionDelay={0.1}
+              gradientClass="bg-gradient-to-br from-teal-500/[0.12] via-card to-cyan-600/[0.08] dark:from-teal-500/15 dark:via-card dark:to-cyan-950/35"
+              iconWrapClass="bg-teal-500/20 text-teal-800 dark:text-teal-300"
+            />
+          </div>
+        </motion.section>
+      )}
+
+      {/* Primary KPIs — hero gradient tiles (clients: no duplicate total; use upcoming instead) */}
+      <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4">
+        <HeroKpiTile
           icon={ArrowDownCircle}
           label="Arrivals today"
           value={stats?.todayArrivals ?? todayOverview?.flightsArriving ?? 0}
           loading={loading}
           onClick={() => navigate('/flights')}
-          accent="primary"
+          transitionDelay={0}
+          gradientClass="bg-gradient-to-br from-cyan-500/[0.12] via-card to-teal-600/[0.06] dark:from-cyan-500/15 dark:via-card dark:to-teal-950/30"
+          iconWrapClass="bg-cyan-500/15 text-cyan-700 dark:text-cyan-300"
         />
-        <StatCard
+        <HeroKpiTile
           icon={ArrowUpCircle}
           label="Departures today"
           value={stats?.todayDepartures ?? todayOverview?.flightsDeparting ?? 0}
           loading={loading}
           onClick={() => navigate('/flights')}
-          accent="success"
+          transitionDelay={0.04}
+          gradientClass="bg-gradient-to-br from-emerald-500/[0.12] via-card to-green-600/[0.06] dark:from-emerald-500/15 dark:via-card dark:to-green-950/30"
+          iconWrapClass="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
         />
-        <StatCard
-          icon={Truck}
-          label="Total transfers"
-          value={stats?.total || 0}
-          loading={loading}
-          onClick={() => navigate('/transfers')}
-          accent="blue"
-        />
-        <StatCard
+        {isClient ? (
+          <HeroKpiTile
+            icon={Clock}
+            label="Upcoming"
+            value={stats?.upcoming ?? 0}
+            loading={loading}
+            onClick={() => navigate('/transfers')}
+            transitionDelay={0.08}
+            gradientClass="bg-gradient-to-br from-amber-500/[0.12] via-card to-orange-600/[0.06] dark:from-amber-500/14 dark:via-card dark:to-orange-950/28"
+            iconWrapClass="bg-amber-500/15 text-amber-800 dark:text-amber-300"
+          />
+        ) : (
+          <HeroKpiTile
+            icon={Truck}
+            label="Total transfers"
+            value={stats?.total || 0}
+            loading={loading}
+            onClick={() => navigate('/transfers')}
+            transitionDelay={0.08}
+            gradientClass="bg-gradient-to-br from-blue-500/[0.12] via-card to-indigo-600/[0.07] dark:from-blue-500/15 dark:via-card dark:to-indigo-950/35"
+            iconWrapClass="bg-blue-500/15 text-blue-700 dark:text-blue-300"
+          />
+        )}
+        <HeroKpiTile
           icon={CheckCircle}
           label="Completed"
           value={statusCount('completed')}
           loading={loading}
           onClick={() => navigate('/transfers?status=completed')}
-          accent="success"
+          transitionDelay={0.12}
+          gradientClass="bg-gradient-to-br from-violet-500/[0.1] via-card to-fuchsia-600/[0.06] dark:from-violet-500/12 dark:via-card dark:to-fuchsia-950/25"
+          iconWrapClass="bg-violet-500/15 text-violet-700 dark:text-violet-300"
         />
       </div>
+
+      {/* Network — large tiles (admin): travelers, companies, vendors, drivers */}
+      {isAdmin && (
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.04 }}
+          className="mb-12"
+        >
+          <div className="mb-6 sm:mb-8">
+            <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Network</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground sm:text-base">
+              Travelers and companies on the platform, plus partners and drivers — tap a tile to open the list.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-2">
+            <NetworkBigTile
+              label="Travelers"
+              description="Traveler accounts on the platform."
+              value={userStats.travelers}
+              loading={userStatsLoading}
+              onClick={() => navigate('/travelers')}
+              icon={UserCheck}
+              emphasis
+              transitionDelay={0}
+              gradientClass="bg-gradient-to-br from-violet-500/[0.14] via-card to-indigo-600/[0.06] dark:from-violet-500/18 dark:via-card dark:to-indigo-950/35"
+              iconWrapClass="bg-violet-500/20 text-violet-700 dark:text-violet-300"
+            />
+            <NetworkBigTile
+              label="Companies"
+              description="Client organizations."
+              value={userStats.clients}
+              loading={userStatsLoading}
+              onClick={() => navigate('/user-management')}
+              icon={Briefcase}
+              emphasis
+              transitionDelay={0.06}
+              gradientClass="bg-gradient-to-br from-sky-500/[0.12] via-card to-blue-600/[0.08] dark:from-sky-500/15 dark:via-card dark:to-blue-950/40"
+              iconWrapClass="bg-sky-500/20 text-sky-800 dark:text-sky-300"
+            />
+            <NetworkBigTile
+              label="Vendors"
+              description="Vendor accounts."
+              value={userStats.vendors}
+              loading={userStatsLoading}
+              onClick={() => navigate('/user-management')}
+              icon={Building2}
+              transitionDelay={0.1}
+              gradientClass="bg-gradient-to-br from-amber-500/[0.12] via-card to-orange-600/[0.06] dark:from-amber-500/14 dark:via-card dark:to-orange-950/30"
+              iconWrapClass="bg-amber-500/20 text-amber-800 dark:text-amber-300"
+            />
+            <NetworkBigTile
+              label="Drivers"
+              description="Driver profiles."
+              value={userStats.drivers}
+              loading={userStatsLoading}
+              onClick={() => navigate('/drivers')}
+              icon={Truck}
+              transitionDelay={0.14}
+              gradientClass="bg-gradient-to-br from-emerald-500/[0.12] via-card to-teal-600/[0.07] dark:from-emerald-500/15 dark:via-card dark:to-teal-950/35"
+              iconWrapClass="bg-emerald-500/20 text-emerald-800 dark:text-emerald-300"
+            />
+          </div>
+        </motion.section>
+      )}
 
       {/* Status pipeline - horizontal bar */}
       <motion.div
@@ -259,72 +478,63 @@ const Dashboard = () => {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="rounded-xl border border-border bg-card p-6"
+            className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm"
           >
-            <div className="mb-5 flex items-center gap-2">
-              <Calendar size={18} className="text-muted-foreground" />
-              <h2 className="text-base font-semibold text-foreground">Today</h2>
+            <div className="border-b border-border/60 bg-muted/20 px-6 py-4">
+              <div className="flex items-center gap-2">
+                <Calendar size={20} className="text-primary" />
+                <h2 className="text-lg font-semibold text-foreground">Today</h2>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">Activity for the current calendar day</p>
             </div>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4 lg:p-5">
               {[
-                { label: 'Arriving', value: todayOverview.flightsArriving, icon: Plane, href: '/flights' },
-                { label: 'Departing', value: todayOverview.flightsDeparting, icon: Plane, href: '/flights' },
-                { label: 'Scheduled', value: todayOverview.transfersScheduled, icon: Truck, href: '/transfers' },
-                { label: 'Travelers', value: todayOverview.customersTraveling, icon: Users, href: '/transfers' }
-              ].map(({ label, value, icon: Icon, href }) => (
-                <div
+                {
+                  label: 'Arriving',
+                  value: todayOverview.flightsArriving,
+                  icon: Plane,
+                  href: '/flights',
+                  grad: 'from-sky-500/[0.1] to-card dark:to-card'
+                },
+                {
+                  label: 'Departing',
+                  value: todayOverview.flightsDeparting,
+                  icon: Plane,
+                  href: '/flights',
+                  grad: 'from-amber-500/[0.1] to-card dark:to-card'
+                },
+                {
+                  label: 'Scheduled',
+                  value: todayOverview.transfersScheduled,
+                  icon: Truck,
+                  href: '/transfers',
+                  grad: 'from-indigo-500/[0.1] to-card dark:to-card'
+                },
+                {
+                  label: 'Traveling today',
+                  value: todayOverview.customersTraveling,
+                  icon: Users,
+                  href: '/transfers',
+                  grad: 'from-rose-500/[0.08] to-card dark:to-card'
+                }
+              ].map(({ label, value, icon: Icon, href, grad }) => (
+                <button
+                  type="button"
                   key={label}
                   onClick={() => navigate(href)}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border border-border/60 bg-muted/20 p-4 transition-colors hover:bg-muted/40"
+                  className={`flex min-h-[112px] flex-col justify-between rounded-xl border border-border/50 bg-gradient-to-br p-5 text-left transition-all hover:border-primary/30 hover:shadow-md ${grad}`}
                 >
-                  <Icon size={18} className="text-muted-foreground" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">{label}</p>
-                    <p className="text-xl font-semibold tabular-nums text-foreground">
-                      {todayLoading ? '—' : (value ?? 0)}
-                    </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>
+                    <Icon className="h-5 w-5 shrink-0 text-muted-foreground/80" strokeWidth={1.75} />
                   </div>
-                </div>
+                  <p className="text-3xl font-bold tabular-nums tracking-tight text-foreground sm:text-4xl">
+                    {todayLoading ? '—' : (value ?? 0)}
+                  </p>
+                </button>
               ))}
             </div>
           </motion.section>
-
-          {/* Admin user stats */}
-          {isAdmin && (
-            <motion.section
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-              className="rounded-xl border border-border bg-card p-6"
-            >
-              <div className="mb-5 flex items-center gap-2">
-                <Building2 size={18} className="text-muted-foreground" />
-                <h2 className="text-base font-semibold text-foreground">Platform</h2>
-              </div>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {[
-                  { label: 'Clients', value: userStats.clients, icon: Briefcase, href: '/user-management' },
-                  { label: 'Vendors', value: userStats.vendors, icon: Building2, href: '/user-management' },
-                  { label: 'Drivers', value: userStats.drivers, icon: Truck, href: '/drivers' },
-                  { label: 'Travelers', value: userStats.travelers, icon: UserCheck, href: '/travelers' }
-                ].map(({ label, value, icon: Icon, href }) => (
-                  <div
-                    key={label}
-                    onClick={() => navigate(href)}
-                    className="flex cursor-pointer items-center gap-3 rounded-lg border border-border/60 bg-muted/20 p-4 transition-colors hover:bg-muted/40"
-                  >
-                    <Icon size={18} className="text-muted-foreground" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">{label}</p>
-                      <p className="text-xl font-semibold tabular-nums text-foreground">
-                        {userStatsLoading ? '—' : value}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.section>
-          )}
         </div>
 
         {/* Right: AI Insights or Quick actions */}

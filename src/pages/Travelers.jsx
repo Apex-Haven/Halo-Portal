@@ -630,6 +630,8 @@ const Travelers = () => {
             options={clientFilterOptions}
             placeholder="Filter by client"
             minWidth="100%"
+            searchable
+            searchPlaceholder="Search clients..."
           />
         </div>
         {canDeleteTravelers && selectedTravelers.size > 0 && (
@@ -823,6 +825,8 @@ const Travelers = () => {
                     ]}
                     placeholder="Select a client"
                     minWidth="100%"
+                    searchable
+                    searchPlaceholder="Search clients..."
                   />
                   {loadingClients && (
                     <p className="text-xs text-muted-foreground mt-1">Loading clients...</p>

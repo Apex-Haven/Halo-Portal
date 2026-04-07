@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, Bell, User, ChevronDown, Settings, LogOut, Zap, Moon, Sun, Truck, UserPlus, FileText, Sparkles } from 'lucide-react'
+import { Menu, Bell, User, ChevronDown, Settings, LogOut, Moon, Sun, Truck, UserPlus, FileText } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useChat } from '../contexts/ChatContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { inAppNotificationApi } from '../services/notificationService'
+import { HaloAiIcon } from './HaloAiIcon'
 
 const Header = ({ onMenuClick }) => {
   const { setOpen: openChat } = useChat()
@@ -140,9 +141,14 @@ const Header = ({ onMenuClick }) => {
         
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-600">
-            <Zap size={20} className="text-white" />
-          </div>
+          <img
+            src="/halo-logo.svg"
+            alt=""
+            width={44}
+            height={44}
+            className="h-11 w-11 rounded-xl shrink-0"
+            aria-hidden
+          />
           <div>
             <h1 className="text-lg font-bold text-foreground m-0">
               HALO
@@ -164,7 +170,7 @@ const Header = ({ onMenuClick }) => {
             title="HALO AI – Ask questions about your transfers"
             aria-label="Open HALO AI"
           >
-            <Sparkles size={16} className="text-primary" />
+            <HaloAiIcon size={20} />
             <span className="hidden sm:inline text-xs font-medium text-foreground">
               HALO AI
             </span>

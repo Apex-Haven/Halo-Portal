@@ -2,6 +2,8 @@
  * Utility functions for transfer-related operations
  */
 
+import { getTimezoneForIata } from './iataTimezones.js'
+
 /** Fixed locations for all transfers */
 export const DEFAULT_AIRPORT = 'Kuala Lumpur International Airport (KUL)'
 export const DEFAULT_HOTEL = 'Grand Hyatt Kuala Lumpur'
@@ -90,6 +92,100 @@ const getOrdinal = (n) => {
 }
 
 /**
+ * Format an instant in the local wall time of an airport (IATA), matching how times appear on tickets / in sheets.
+ * @param {string|Date|null|undefined} dateStr - ISO UTC instant from API
+ * @param {string|null|undefined} iataCode - 3-letter IATA (e.g. BOM, SIN); unknown → Malaysia default
+ * @returns {string}
+ */
+export const formatDateTimeAtAirport = (dateStr, iataCode) => {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  const tz = getTimezoneForIata(iataCode)
+  const dayNum = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: tz, day: 'numeric' }).format(d), 10)
+  const month = new Intl.DateTimeFormat('en-GB', { timeZone: tz, month: 'long' }).format(d)
+  const year = new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric' }).format(d)
+  const time = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(d)
+  return `${dayNum}${getOrdinal(dayNum)} ${month} ${year}, ${time}`
+}
+
+/**
+ * Time only in airport local zone (e.g. "9:00 PM")
+ */
+export const formatTimeAtAirport = (dateStr, iataCode) => {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '—'
+  const tz = getTimezoneForIata(iataCode)
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(d)
+}
+
+/** Onward airport pickup: use inbound arrival airport (usually KUL) for zone */
+export const formatTransferPickupLocal = (transfer) =>
+  formatDateTimeAtAirport(
+    transfer?.transfer_details?.estimated_pickup_time,
+    transfer?.flight_details?.arrival_airport || 'KUL'
+  )
+
+/** Return leg hotel→airport pickup: departure airport of return flight (usually KUL) */
+export const formatReturnPickupLocal = (transfer) =>
+  formatDateTimeAtAirport(
+    transfer?.return_transfer_details?.estimated_pickup_time,
+    transfer?.return_flight_details?.departure_airport || 'KUL'
+)
+
+export const formatFlightDepartureLocal = (fd) => formatDateTimeAtAirport(fd?.departure_time, fd?.departure_airport)
+
+export const formatFlightArrivalLocal = (fd) => formatDateTimeAtAirport(fd?.arrival_time, fd?.arrival_airport)
+
+/**
+ * IATA codes only: "SIN → KUL" (TBD when unknown)
+ * @param {Object|null|undefined} fd - flight_details or return_flight_details
+ */
+export const getFlightRouteCodes = (fd) => {
+  if (!fd) return '—'
+  const dep = (fd.departure_airport || '').trim()
+  const arr = (fd.arrival_airport || '').trim()
+  const depU = dep.toUpperCase()
+  const arrU = arr.toUpperCase()
+  const depOk = dep && depU !== 'TBD' && depU !== 'N/A'
+  const arrOk = arr && arrU !== 'TBD' && arrU !== 'N/A'
+  if (!depOk && !arrOk) return '—'
+  return `${depOk ? depU : 'TBD'} → ${arrOk ? arrU : 'TBD'}`
+}
+
+/**
+ * Human route with optional names from FlightStats: "Singapore Changi (SIN) → Kuala Lumpur (KUL)"
+ * Falls back to codes only.
+ * @param {Object|null|undefined} fd
+ */
+export const getFlightRouteWithNames = (fd) => {
+  if (!fd) return '—'
+  const depCode = (fd.departure_airport || '').trim()
+  const arrCode = (fd.arrival_airport || '').trim()
+  const depName = (fd.departure_airport_name || '').trim()
+  const arrName = (fd.arrival_airport_name || '').trim()
+  const depU = depCode.toUpperCase()
+  const arrU = arrCode.toUpperCase()
+  const depOk = depCode && depU !== 'TBD' && depU !== 'N/A'
+  const arrOk = arrCode && arrU !== 'TBD' && arrU !== 'N/A'
+  if (!depOk && !arrOk) return '—'
+  const left = depOk ? (depName ? `${depName} (${depU})` : depU) : 'TBD'
+  const right = arrOk ? (arrName ? `${arrName} (${arrU})` : arrU) : 'TBD'
+  return `${left} → ${right}`
+}
+
+/**
  * Format date as "10th March 2026" and time as "2:10 AM"
  * @param {string|Date} dateStr - ISO date string or Date
  * @returns {string} Formatted "10th March 2026, 2:10 AM"
@@ -147,6 +243,44 @@ export const getCompanyName = (transfer) => {
 };
 
 /**
+ * People on one transfer: primary traveler + delegates (travelers in same car).
+ * Uses explicit delegates[] only — no heuristics.
+ *
+ * @param {Object} transfer
+ * @returns {number}
+ */
+export const getTransferTravelerHeadcount = (transfer) => {
+  if (!transfer) return 0;
+  const delegates = Array.isArray(transfer.delegates) ? transfer.delegates.length : 0;
+  return 1 + delegates;
+};
+
+/**
+ * Unique traveler user IDs across a list of transfers (primary + delegates, de-duplicated).
+ * Use for Transfers page KPIs: adding someone to "same car" does not inflate this count if they were already counted on another transfer in the set; within one transfer each person counts once.
+ *
+ * @param {Array<Object>} transfers
+ * @returns {number}
+ */
+export const getUniqueTravelerCountAcrossTransfers = (transfers) => {
+  if (!Array.isArray(transfers) || transfers.length === 0) return 0;
+  const ids = new Set();
+  for (const t of transfers) {
+    const primary = t.traveler_id?._id ?? t.traveler_id;
+    if (primary) {
+      ids.add(String(primary));
+    } else {
+      ids.add(`__primary_slot:${t._id}`);
+    }
+    for (const d of t.delegates || []) {
+      const id = d.traveler_id?._id ?? d.traveler_id;
+      if (id) ids.add(String(id));
+    }
+  }
+  return ids.size;
+};
+
+/**
  * Get the display name for a transfer
  * Format: Company Name - Traveler Name (company first, traveler second)
  * Fallback: Customer name → Apex ID
@@ -158,7 +292,13 @@ export const getTransferDisplayName = (transfer) => {
   if (!transfer) return 'N/A';
 
   const companyName = getCompanyName(transfer);
-  const travelerName = transfer.traveler_details?.name || null;
+  const fromProfile = transfer.traveler_id?.profile
+    ? [transfer.traveler_id.profile.salutation, transfer.traveler_id.profile.firstName, transfer.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
+    : null;
+  const fromDetails = transfer.traveler_details?.salutation?.trim()
+    ? `${transfer.traveler_details.salutation} ${transfer.traveler_details?.name || ''}`.trim()
+    : transfer.traveler_details?.name || null;
+  const travelerName = fromProfile || fromDetails || null;
   const rawName = transfer.customer_details?.name || null;
   const salutation = transfer.customer_details?.salutation?.trim();
   const clientName = rawName ? (salutation ? `${salutation} ${rawName}` : rawName) : null;
@@ -199,12 +339,16 @@ export const getClientAndTravelerNames = (transfer) => {
   const rawName = transfer.customer_details?.name || 'N/A';
   const salutation = transfer.customer_details?.salutation?.trim();
   const clientName = salutation ? `${salutation} ${rawName}`.trim() : rawName;
-  // Primary traveler: traveler_details.name or traveler_id (populated User)
+  // Primary traveler: prefer traveler_id.profile (canonical source with salutation) when populated
+  const fromProfile = transfer.traveler_id?.profile
+    ? [transfer.traveler_id.profile.salutation, transfer.traveler_id.profile.firstName, transfer.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
+    : null;
+  const fromDetails = transfer.traveler_details?.salutation?.trim()
+    ? `${transfer.traveler_details.salutation} ${transfer.traveler_details?.name || ''}`.trim()
+    : transfer.traveler_details?.name || null;
   const travelerName =
-    transfer.traveler_details?.name ||
-    (transfer.traveler_id?.profile
-      ? [transfer.traveler_id.profile.firstName, transfer.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
-      : null) ||
+    fromProfile ||
+    fromDetails ||
     transfer.traveler_id?.email ||
     transfer.traveler_id?.username ||
     null;
@@ -223,6 +367,71 @@ export const getClientAndTravelerNames = (transfer) => {
     travelerName,
     displayText
   };
+};
+
+/**
+ * Get display name for a delegate (traveler in same car)
+ * Uses salutation when available from traveler_id.profile
+ *
+ * @param {Object} delegate - Delegate entry with traveler_id (populated) and optional travelerName
+ * @returns {string} Display name for the delegate
+ */
+export const getDelegateDisplayName = (delegate) => {
+  if (!delegate) return 'Traveler';
+  if (delegate.travelerName) return delegate.travelerName;
+  const p = delegate.traveler_id?.profile;
+  if (p) {
+    const name = [p.salutation, p.firstName, p.lastName].filter(Boolean).join(' ').trim();
+    return name || delegate.traveler_id?.email || 'Traveler';
+  }
+  return delegate.traveler_id?.email || 'Traveler';
+};
+
+/**
+ * Expand one API transfer into one row per traveler for list UIs when delegates share the same car.
+ * Same underlying transfer document; each row has a stable cardRowKey for React keys.
+ *
+ * @param {Object} transfer
+ * @returns {Array<{ transfer: Object, cardRowKey: string, cardTravelerLabel: string, sameCarGroupSize: number, sameCarIndex: number }>}
+ */
+export const expandTransferToCardRows = (transfer) => {
+  if (!transfer) return [];
+  const delegates = transfer.delegates || [];
+  const { travelerName, clientName } = getClientAndTravelerNames(transfer);
+  const primaryLabel =
+    travelerName || (clientName && clientName !== 'N/A' ? clientName : null) || '—';
+  const n = 1 + delegates.length;
+  if (delegates.length === 0) {
+    return [
+      {
+        transfer,
+        cardRowKey: String(transfer._id),
+        cardTravelerLabel: primaryLabel,
+        sameCarGroupSize: 1,
+        sameCarIndex: 0
+      }
+    ];
+  }
+  const rows = [
+    {
+      transfer,
+      cardRowKey: `${transfer._id}-primary`,
+      cardTravelerLabel: primaryLabel,
+      sameCarGroupSize: n,
+      sameCarIndex: 0
+    }
+  ];
+  delegates.forEach((d) => {
+    const tid = d.traveler_id?._id || d.traveler_id;
+    rows.push({
+      transfer,
+      cardRowKey: `${transfer._id}-d-${tid}`,
+      cardTravelerLabel: getDelegateDisplayName(d),
+      sameCarGroupSize: n,
+      sameCarIndex: rows.length
+    });
+  });
+  return rows;
 };
 
 /**
@@ -273,9 +482,9 @@ export const getTransferStatusDisplay = (transfer) => {
     return { label: 'Driver assignment pending', statusKey: 'pending', description: 'Vendor assigned, driver will be assigned shortly' };
   }
 
-  // Assigned – vendor and driver ready
+  // Assigned – vendor and driver ready, but leg not yet in progress
   if (onwardStatus === 'assigned') {
-    return { label: 'Assigned', statusKey: 'assigned', description: 'Driver assigned and ready for pickup' };
+    return { label: 'Driver assigned', statusKey: 'assigned', description: 'Awaiting pickup — transfer not started yet' };
   }
 
   return { label: onwardStatus.replace(/_/g, ' '), statusKey: onwardStatus, description: 'Transfer is being set up' };
@@ -303,6 +512,6 @@ export const getLegStatusDisplay = (transfer, leg = 'onward') => {
   if (['in_progress', 'enroute', 'waiting'].includes(status)) return { label: leg === 'return' ? 'Return in progress' : 'In progress', statusKey: 'in_progress' };
   if (!hasVendor) return { label: 'Vendor assignment pending', statusKey: 'pending' };
   if (!hasDriver) return { label: 'Driver assignment pending', statusKey: 'pending' };
-  if (status === 'assigned') return { label: 'Assigned', statusKey: 'assigned' };
+  if (status === 'assigned') return { label: 'Driver assigned', statusKey: 'assigned' };
   return { label: status.replace(/_/g, ' '), statusKey: status };
 };

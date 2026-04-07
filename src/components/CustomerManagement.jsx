@@ -406,6 +406,8 @@ const CustomerManagement = () => {
                 }))
               ]}
               minWidth="150px"
+              searchable
+              searchPlaceholder="Search cities..."
             />
           </div>
 
@@ -422,6 +424,8 @@ const CustomerManagement = () => {
                 }))
               ]}
               minWidth="150px"
+              searchable
+              searchPlaceholder="Search vendors..."
             />
           </div>
 

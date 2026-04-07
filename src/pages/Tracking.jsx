@@ -4,7 +4,7 @@ import { MapPin, Clock, User, Car, Navigation, CheckCircle, Circle, AlertCircle,
 // import LiveMap from '../components/LiveMap'; // Commented out for now
 import toast from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
-import { getClientAndTravelerNames, getTransferStatusDisplay, getLegStatusDisplay, getAirlineDisplay, hasRealFlight, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatTimeFriendly } from '../utils/transferUtils';
+import { getClientAndTravelerNames, getDelegateDisplayName, getTransferStatusDisplay, getLegStatusDisplay, getAirlineDisplay, hasRealFlight, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateTimeFriendly, formatDateTimeAtAirport, formatTimeAtAirport, formatTransferPickupLocal } from '../utils/transferUtils';
 import Dropdown from '../components/Dropdown';
 
 const SEARCH_TYPE_APEX = 'apex';
@@ -116,7 +116,7 @@ const Tracking = () => {
     fetchTravelers();
   }, [searchType, companyName]);
 
-  // Build tracking steps: Transfer Requested → Driver Assigned → Transfer Started → Arrival Completed → [Return: Departure Driver → Departure Completed] → Transfer Completed
+  // Build tracking steps: Requested → Driver assigned → In progress (en route) → Completed …
   const buildTrackingStepsFromTransfer = (t) => {
     if (!t) return [];
     const onwardStatus = t.transfer_details?.transfer_status || t.transfer_details?.status || 'pending';
@@ -126,7 +126,7 @@ const Tracking = () => {
     const hasReturn = !!(t.return_transfer_details || t.return_flight_details);
     // Driver Assigned: status is 'assigned' or later (or has assigned_driver_details)
     const driverAssigned = hasDriver || ['assigned', 'enroute', 'waiting', 'in_progress', 'completed'].includes(onwardStatus);
-    // Transfer Started: driver has begun (enroute, waiting, in_progress, or completed) - not just assigned
+    // In progress: driver en route / with traveler — not the same as "assigned" only
     const transferStarted = ['enroute', 'waiting', 'in_progress', 'completed'].includes(onwardStatus);
     const returnDriverAssigned = hasReturn && (!!t.return_assigned_driver_details || ['assigned', 'enroute', 'waiting', 'in_progress', 'completed'].includes(returnStatus));
     const returnCompleted = hasReturn && returnStatus === 'completed';
@@ -135,7 +135,7 @@ const Tracking = () => {
     const steps = [
       { id: 1, title: 'Transfer Requested', description: 'Your transfer request has been received', status: 'completed', time: null },
       { id: 2, title: 'Driver Assigned (Arrival)', description: driverAssigned ? `Driver: ${t.assigned_driver_details?.name || 'N/A'}` : 'Vendor will assign a driver', status: driverAssigned ? 'completed' : 'pending', time: null },
-      { id: 3, title: 'Transfer Started', description: 'Transfer has begun', status: transferStarted ? 'completed' : 'pending', time: null },
+      { id: 3, title: 'Transfer in progress', description: 'Driver en route or pickup underway', status: transferStarted ? 'completed' : 'pending', time: null },
       { id: 4, title: hasReturn ? 'Arrival Transfer Completed' : 'Transfer Completed', description: 'You have reached your destination', status: onwardCompleted ? 'completed' : 'pending', time: null }
     ];
 
@@ -152,7 +152,7 @@ const Tracking = () => {
   const defaultSteps = [
     { id: 1, title: 'Transfer Requested', description: 'Your transfer request has been received', status: 'completed', time: null },
     { id: 2, title: 'Driver Assigned (Arrival)', description: 'Vendor will assign a driver', status: 'pending', time: null },
-    { id: 3, title: 'Transfer Started', description: 'Transfer has begun', status: 'pending', time: null },
+    { id: 3, title: 'Transfer in progress', description: 'Driver en route or pickup underway', status: 'pending', time: null },
     { id: 4, title: 'Transfer Completed', description: 'You have reached your destination', status: 'pending', time: null }
   ];
 
@@ -390,15 +390,12 @@ const Tracking = () => {
       case 'enroute': return 'Arrival transfer in progress';
       case 'waiting': return 'Driver is waiting at pickup';
       case 'pending': return 'Waiting for driver assignment';
-      case 'assigned': return 'Driver assigned, transfer started';
+      case 'assigned': return 'Driver assigned — awaiting pickup (transfer not started yet)';
       case 'delayed': return 'Transfer is delayed';
       case 'cancelled': return 'This transfer was cancelled';
       default: return 'Status unknown';
     }
   };
-
-  const formatTime = (date) => date ? formatTimeFriendly(date) : null;
-  const formatDateTime = (date) => date ? formatDateTimeFriendly(date) : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -505,6 +502,8 @@ const Tracking = () => {
                     ]}
                     placeholder={loadingCompanies ? 'Loading...' : 'Select company'}
                     minWidth="100%"
+                    searchable
+                    searchPlaceholder="Search companies..."
                   />
                 </div>
                 <div>
@@ -529,6 +528,8 @@ const Tracking = () => {
                     ]}
                     placeholder={!companyName ? 'Select company first' : (loadingTravelers ? 'Loading...' : 'Select traveler')}
                     minWidth="100%"
+                    searchable
+                    searchPlaceholder="Search travelers..."
                   />
                 </div>
               </div>
@@ -734,7 +735,10 @@ const Tracking = () => {
                           <div className="pt-2 border-t border-border">
                             <span className="text-xs text-muted-foreground">Estimated pickup</span>
                             <p className="text-sm font-medium text-foreground">
-                              {formatDateTime(transfer.return_transfer_details.estimated_pickup_time) || formatTime(transfer.return_transfer_details.estimated_pickup_time) || '—'}
+                              {formatDateTimeAtAirport(
+                                transfer.return_transfer_details.estimated_pickup_time,
+                                transfer.return_flight_details?.departure_airport || 'KUL'
+                              ) || '—'}
                             </p>
                           </div>
                         )}
@@ -776,7 +780,12 @@ const Tracking = () => {
                           <div>
                             <span className="text-muted-foreground">Arrival</span>
                             <p className="font-medium text-foreground">
-                              {getFlightFieldDisplay(formatDateTime(transfer.flight_details.arrival_time) || formatTime(transfer.flight_details.arrival_time))}
+                              {getFlightFieldDisplay(
+                                formatDateTimeAtAirport(
+                                  transfer.flight_details.arrival_time,
+                                  transfer.flight_details.arrival_airport
+                                )
+                              )}
                             </p>
                           </div>
                           {transfer.flight_details.status && transfer.flight_details.status !== 'on_time' && (
@@ -789,7 +798,7 @@ const Tracking = () => {
                             <div className="col-span-2">
                               <span className="text-muted-foreground">Last verified</span>
                               <p className="font-medium text-foreground text-xs">
-                                {formatDateTime(transfer.flight_details.last_checked) || '—'}
+                                {formatDateTimeFriendly(transfer.flight_details.last_checked) || '—'}
                               </p>
                             </div>
                           )}
@@ -821,7 +830,12 @@ const Tracking = () => {
                           <div>
                             <span className="text-muted-foreground">Departure</span>
                             <p className="font-medium text-foreground">
-                              {getFlightFieldDisplay(formatDateTime(transfer.return_flight_details.departure_time) || formatTime(transfer.return_flight_details.departure_time))}
+                              {getFlightFieldDisplay(
+                                formatDateTimeAtAirport(
+                                  transfer.return_flight_details.departure_time,
+                                  transfer.return_flight_details.departure_airport
+                                )
+                              )}
                             </p>
                           </div>
                           {transfer.return_flight_details.status && transfer.return_flight_details.status !== 'on_time' && (
@@ -834,7 +848,7 @@ const Tracking = () => {
                             <div className="col-span-2">
                               <span className="text-muted-foreground">Last verified</span>
                               <p className="font-medium text-foreground text-xs">
-                                {formatDateTime(transfer.return_flight_details.last_checked) || '—'}
+                                {formatDateTimeFriendly(transfer.return_flight_details.last_checked) || '—'}
                               </p>
                             </div>
                           )}
@@ -939,9 +953,7 @@ const Tracking = () => {
                             ) : null;
                           })()}
                           {(transfer.delegates || []).map((d, i) => {
-                            const name = d.traveler_id?.profile
-                              ? [d.traveler_id.profile.firstName, d.traveler_id.profile.lastName].filter(Boolean).join(' ').trim()
-                              : d.travelerName || d.traveler_id?.email || 'Traveler';
+                            const name = getDelegateDisplayName(d);
                             return (
                               <div key={i} className="flex items-center gap-2">
                                 <span className="text-muted-foreground">•</span>
@@ -963,13 +975,15 @@ const Tracking = () => {
                           <div>
                             <span className="text-xs text-muted-foreground block">Scheduled</span>
                             <span className="text-base font-medium text-foreground">
-                              {formatDateTime(transfer.transfer_details?.estimated_pickup_time) || formatTime(transfer.transfer_details?.estimated_pickup_time || transfer.flight_details?.arrival_time) || '—'}
+                              {formatTransferPickupLocal(transfer) || '—'}
                             </span>
                           </div>
                           {estimatedArrival && (
                             <div>
                               <span className="text-xs text-muted-foreground block">Estimated arrival</span>
-                              <span className="text-base font-medium text-primary">{formatTime(estimatedArrival)}</span>
+                              <span className="text-base font-medium text-primary">
+                                {formatTimeAtAirport(estimatedArrival, transfer.flight_details?.arrival_airport || 'KUL')}
+                              </span>
                             </div>
                           )}
                         </div>

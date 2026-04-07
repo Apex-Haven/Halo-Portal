@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { getTransferDisplayName, getClientAndTravelerNames, getTransferStatusDisplay, formatDateTimeFriendly, getAirlineDisplay, hasRealFlight, getFlightNoDisplay } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, getTransferStatusDisplay, formatTransferPickupLocal, formatFlightArrivalLocal, getAirlineDisplay, hasRealFlight, getFlightNoDisplay } from '../utils/transferUtils'
 import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 
 const Transfers = () => {
@@ -431,6 +431,8 @@ const Transfers = () => {
               ]}
               placeholder="Select company"
               minWidth="100%"
+              searchable
+              searchPlaceholder="Search companies..."
             />
           </div>
           <div className="flex-1 min-w-[180px] sm:min-w-[200px]">
@@ -444,6 +446,8 @@ const Transfers = () => {
               ]}
               placeholder={!companyFilter ? 'Select company first' : 'Select traveler'}
               minWidth="100%"
+              searchable
+              searchPlaceholder="Search travelers..."
             />
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -507,6 +511,8 @@ const Transfers = () => {
                   }))
                 ]}
                 minWidth="150px"
+                searchable
+                searchPlaceholder="Search vendors..."
               />
             </div>
 
@@ -522,6 +528,8 @@ const Transfers = () => {
                     label: airport
                   }))
                 ]}
+                searchable
+                searchPlaceholder="Search airports..."
               />
             </div>
 
@@ -856,7 +864,7 @@ const Transfers = () => {
                                   <span>Pickup</span>
                                 </div>
                                 <div className="text-muted-foreground mt-0.5">
-                                  {formatDateTimeFriendly(transfer.transfer_details.estimated_pickup_time)}
+                                  {formatTransferPickupLocal(transfer)}
                                 </div>
                               </div>
                             )}
@@ -867,7 +875,7 @@ const Transfers = () => {
                                   <span>Arrival</span>
                                 </div>
                                 <div className="text-muted-foreground mt-0.5">
-                                  {formatDateTimeFriendly(transfer.flight_details.arrival_time)}
+                                  {formatFlightArrivalLocal(transfer.flight_details)}
                                 </div>
                               </div>
                             )}

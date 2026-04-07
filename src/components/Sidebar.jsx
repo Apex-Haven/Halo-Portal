@@ -121,11 +121,11 @@ const Sidebar = ({ onClose, isMobile, isCollapsed, onToggleCollapse }) => {
               to={item.href}
               onClick={isMobile ? onClose : undefined}
               title={isCollapsed ? item.name : undefined}
-              className={({ isActive }) => 
-                `flex items-center ${isCollapsed ? 'justify-center' : 'justify-start'} ${isCollapsed ? 'p-3' : 'px-4 py-3'} text-sm font-semibold rounded-lg no-underline transition-all duration-300 relative min-h-12 w-full mt-1 ${
-                  isActive 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              className={({ isActive }) =>
+                `flex items-center ${isCollapsed ? 'justify-center' : 'justify-start'} ${isCollapsed ? 'p-3' : 'px-4 py-3'} text-sm font-semibold rounded-lg no-underline transition-all duration-300 relative min-h-12 w-full mt-1 border-2 ${
+                  isActive
+                    ? 'border-primary text-primary bg-primary/5 dark:bg-primary/10 shadow-sm'
+                    : 'border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:border-border'
                 }`
               }
             >

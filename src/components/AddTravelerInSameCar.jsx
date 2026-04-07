@@ -18,7 +18,10 @@ const AddTravelerInSameCar = ({ transfer, isOpen, onClose, onSuccess }) => {
   const [submitting, setSubmitting] = useState(false);
 
   const customerId = transfer?.customer_id ? String(transfer.customer_id) : null;
-  const primaryTravelerId = transfer?.traveler_id ? String(transfer.traveler_id) : null;
+  // traveler_id may be a populated object { _id, profile } — must extract id or String() breaks filtering
+  const primaryTravelerId = transfer?.traveler_id
+    ? String(transfer.traveler_id._id || transfer.traveler_id)
+    : null;
   const existingDelegates = transfer?.delegates || [];
   const existingDelegateIds = new Set(
     existingDelegates.map((d) => String(d.traveler_id?._id || d.traveler_id)).filter(Boolean)

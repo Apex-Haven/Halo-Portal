@@ -1,7 +1,7 @@
 /**
  * HALO Transfer Flow - Project-wide constants and helpers
  *
- * Flow: Transfer Requested → Driver Assigned → Transfer Started (auto) →
+ * Flow: Transfer Requested → Driver Assigned (awaiting pickup) → In Progress (en route / pickup) →
  *       Arrival Completed → [Return: Departure Driver → Departure Completed] → Transfer Completed
  *
  * Status mapping: pending | assigned | in_progress | completed
@@ -18,16 +18,16 @@ export const TRANSFER_STATUS = {
 
 // Pipeline stages for Operations Dashboard (4 stages)
 export const PIPELINE_STAGES = [
-  { id: 'pending', label: 'Pending', description: 'Waiting for driver assignment' },
-  { id: 'assigned', label: 'Assigned', description: 'Driver assigned, transfer started' },
-  { id: 'in_progress', label: 'In Progress', description: 'Arrival transfer in progress' },
+  { id: 'pending', label: 'Pending', description: 'Waiting for vendor or driver assignment' },
+  { id: 'assigned', label: 'Driver assigned', description: 'Awaiting pickup — transfer not started yet' },
+  { id: 'in_progress', label: 'In Progress', description: 'Transfer started — driver en route or with traveler' },
   { id: 'completed', label: 'Completed', description: 'Transfer completed' }
 ]
 
 // Status options for filters, dropdowns, quick actions
 export const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
-  { value: 'assigned', label: 'Assigned' },
+  { value: 'assigned', label: 'Driver assigned' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'completed', label: 'Completed' },
   { value: 'cancelled', label: 'Cancelled' }

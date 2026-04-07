@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Search, Plane, MapPin, AlertCircle, User, Filter, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { getTransferDisplayName, getClientAndTravelerNames, formatDateTimeFriendly, getAirlineDisplay, hasRealFlight, getFlightFieldDisplay } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, formatDateTimeAtAirport, getAirlineDisplay, hasRealFlight, getFlightFieldDisplay } from '../utils/transferUtils'
 
 const Flights = () => {
   const [activeTab, setActiveTab] = useState('all-flights')
@@ -418,10 +418,20 @@ const Flights = () => {
                           </span>
                         </div>
                         <div className="text-foreground">
-                          {formatDateTimeFriendly(flight.scheduled_time) || 'N/A'}
+                          {formatDateTimeAtAirport(
+                            flight.scheduled_time,
+                            flight.leg === 'arrival'
+                              ? flight.transfer?.flight_details?.arrival_airport
+                              : flight.transfer?.return_flight_details?.departure_airport || 'KUL'
+                          ) || 'N/A'}
                         </div>
                         <div className={flight.actual_time ? 'text-foreground' : 'text-muted-foreground'}>
-                          {formatDateTimeFriendly(flight.actual_time) || 'N/A'}
+                          {formatDateTimeAtAirport(
+                            flight.actual_time,
+                            flight.leg === 'arrival'
+                              ? flight.transfer?.flight_details?.arrival_airport
+                              : flight.transfer?.return_flight_details?.departure_airport || 'KUL'
+                          ) || 'N/A'}
                         </div>
                         <div className={`font-medium ${
                           flight.delay_minutes > 0 ? 'text-warning-600 dark:text-warning-500' :
@@ -531,7 +541,7 @@ const Flights = () => {
                         <div className="text-sm text-muted-foreground">{globalFlightData.departureAirportName}</div>
                         <div className="text-sm">{globalFlightData.departureCity}</div>
                         <div className="text-sm font-medium mt-2">
-                          {formatDateTimeFriendly(globalFlightData.departureTime) || 'N/A'}
+                          {formatDateTimeAtAirport(globalFlightData.departureTime, globalFlightData.departureAirport) || 'N/A'}
                         </div>
                       </div>
                       <div className="flex items-center justify-center">
@@ -547,7 +557,7 @@ const Flights = () => {
                         <div className="text-sm text-muted-foreground">{globalFlightData.arrivalAirportName}</div>
                         <div className="text-sm">{globalFlightData.arrivalCity}</div>
                         <div className="text-sm font-medium mt-2">
-                          {formatDateTimeFriendly(globalFlightData.arrivalTime) || 'N/A'}
+                          {formatDateTimeAtAirport(globalFlightData.arrivalTime, globalFlightData.arrivalAirport) || 'N/A'}
                         </div>
                       </div>
                     </div>

@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { MessageCircle, X, Send, Sparkles, Trash2, History, Plus, ChevronLeft, Pencil, Check } from 'lucide-react'
+import { MessageCircle, X, Send, Trash2, History, Plus, ChevronLeft, Pencil, Check } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useChat } from '../contexts/ChatContext'
+import { HaloAiIcon } from './HaloAiIcon'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
 
@@ -435,7 +436,7 @@ const ChatWidget = () => {
                     >
                       <History size={20} />
                     </button>
-                    <Sparkles size={20} className="text-primary" />
+                    <HaloAiIcon size={24} />
                     <span className="font-semibold text-foreground">HALO AI</span>
                   </div>
                   <div className="flex items-center gap-1">
