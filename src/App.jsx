@@ -17,6 +17,7 @@ import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import UserManagement from './pages/UserManagement'
 import Travelers from './pages/Travelers'
+import Companies from './pages/Companies'
 import Drivers from './pages/Drivers'
 import TravelAdvisory from './pages/TravelAdvisory'
 import OperationsDashboard from './pages/OperationsDashboard'
@@ -111,6 +112,11 @@ const ProtectedApp = () => {
             <Route path="/travelers" element={
               <ProtectedRoute allowedRoles={['CLIENT', 'SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
                 <Travelers />
+              </ProtectedRoute>
+            } />
+            <Route path="/companies" element={
+              <ProtectedRoute allowedRoles={['CLIENT', 'SUPER_ADMIN', 'ADMIN']} redirectTo="/transfers">
+                <Companies />
               </ProtectedRoute>
             } />
             <Route path="/flights" element={

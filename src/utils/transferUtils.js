@@ -388,6 +388,61 @@ export const getDelegateDisplayName = (delegate) => {
 };
 
 /**
+ * Unique guest names attached to a transfer (primary + delegates).
+ *
+ * @param {Object} transfer
+ * @returns {string[]}
+ */
+export const getGuestNamesFromTransfer = (transfer) => {
+  if (!transfer) return [];
+  const names = new Set();
+  const { travelerName, clientName } = getClientAndTravelerNames(transfer);
+  const primaryName = travelerName || (clientName && clientName !== 'N/A' ? clientName : null);
+  if (primaryName && String(primaryName).trim()) names.add(String(primaryName).trim());
+  (transfer.delegates || []).forEach((d) => {
+    const n = getDelegateDisplayName(d);
+    if (n && String(n).trim()) names.add(String(n).trim());
+  });
+  return [...names];
+};
+
+/**
+ * Build deduplicated company guest summaries from transfers.
+ * Company matching is case-insensitive, display keeps first seen casing.
+ *
+ * @param {Array<Object>} transfers
+ * @returns {Array<{companyName: string, guestNames: string[], guestCount: number, transferCount: number}>}
+ */
+export const buildCompaniesFromTransfers = (transfers) => {
+  if (!Array.isArray(transfers) || transfers.length === 0) return [];
+  const map = new Map();
+  for (const t of transfers) {
+    const companyRaw = getCompanyName(t);
+    const companyName = companyRaw && String(companyRaw).trim();
+    if (!companyName) continue;
+    const key = companyName.toLowerCase();
+    if (!map.has(key)) {
+      map.set(key, {
+        companyName,
+        guestNameSet: new Set(),
+        transferIds: new Set()
+      });
+    }
+    const entry = map.get(key);
+    getGuestNamesFromTransfer(t).forEach((n) => entry.guestNameSet.add(n));
+    if (t._id) entry.transferIds.add(String(t._id));
+  }
+  return [...map.values()]
+    .map((entry) => ({
+      companyName: entry.companyName,
+      guestNames: [...entry.guestNameSet].sort((a, b) => a.localeCompare(b)),
+      guestCount: entry.guestNameSet.size,
+      transferCount: entry.transferIds.size
+    }))
+    .sort((a, b) => a.companyName.localeCompare(b.companyName));
+};
+
+/**
  * Expand one API transfer into one row per traveler for list UIs when delegates share the same car.
  * Same underlying transfer document; each row has a stable cardRowKey for React keys.
  *

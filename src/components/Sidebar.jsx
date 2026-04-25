@@ -11,6 +11,7 @@ import {
   Shield,
   Car,
   UserCheck,
+  Briefcase,
   MapPin,
   Activity
 } from 'lucide-react'
@@ -66,6 +67,12 @@ const navigationItems = [
     href: '/travelers', 
     icon: UserCheck,
     roles: ['CLIENT']
+  },
+  {
+    name: 'Companies',
+    href: '/companies',
+    icon: Briefcase,
+    roles: ['SUPER_ADMIN', 'ADMIN', 'CLIENT']
   },
   { 
     name: 'Drivers', 

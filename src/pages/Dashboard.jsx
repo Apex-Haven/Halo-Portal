@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Truck, CheckCircle, Users, Plane, Plus, UserPlus, BarChart3, Calendar, Building2, UserCheck, Briefcase, ArrowDownCircle, ArrowUpCircle, Navigation, ChevronRight, Clock } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import AIInsightsCard from '../components/AIInsightsCard'
 import { useNavigate } from 'react-router-dom'
-import { getTransferDisplayName, getClientAndTravelerNames, getAirlineDisplay, hasRealFlight } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, getAirlineDisplay, hasRealFlight, buildCompaniesFromTransfers } from '../utils/transferUtils'
 
 const STATUS_ORDER = ['pending', 'assigned', 'enroute', 'waiting', 'in_progress', 'completed']
 const STATUS_LABELS = {
@@ -27,13 +27,11 @@ const HeroKpiTile = ({
   iconWrapClass,
   transitionDelay = 0
 }) => (
-  <motion.button
-    type="button"
+  <motion.div
     initial={{ opacity: 0, y: 12 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.35, delay: transitionDelay }}
-    onClick={onClick}
-    className={`group relative min-h-[148px] w-full overflow-hidden rounded-2xl border border-border/50 p-6 text-left shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-lg sm:min-h-[160px] sm:p-7 ${gradientClass}`}
+    className={`group relative min-h-[148px] w-full overflow-hidden rounded-2xl border border-border/50 p-6 text-left shadow-sm transition-all duration-300 sm:min-h-[160px] sm:p-7 ${gradientClass}`}
   >
     <div className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full bg-white/10 opacity-40 blur-2xl dark:bg-white/5" />
     <div className="relative flex h-full flex-col justify-between gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -53,7 +51,7 @@ const HeroKpiTile = ({
         <Icon className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={1.75} />
       </div>
     </div>
-  </motion.button>
+  </motion.div>
 )
 
 /** Large dashboard tile for network / platform counts (not a compact stat card). */
@@ -67,7 +65,10 @@ const NetworkBigTile = ({
   gradientClass,
   iconWrapClass,
   transitionDelay = 0,
-  emphasis = false
+  emphasis = false,
+  hoverPreviewItems = [],
+  hoverPreviewTitle = 'Preview',
+  hoverPreviewMoreCount = 0
 }) => {
   const hasDesc = Boolean(description)
   const sizeClass = emphasis
@@ -115,6 +116,23 @@ const NetworkBigTile = ({
         {description ? (
           <p className="mt-3 max-w-[18rem] text-xs leading-snug text-muted-foreground sm:text-sm">{description}</p>
         ) : null}
+        {hoverPreviewItems.length > 0 ? (
+          <div className="pointer-events-none absolute left-4 right-4 top-4 z-20 hidden rounded-lg border border-border bg-popover/95 p-3 shadow-xl backdrop-blur md:group-hover:block">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{hoverPreviewTitle}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {hoverPreviewItems.map((item) => (
+                <span key={item} className="rounded-full bg-muted px-2 py-0.5 text-xs text-foreground/90">
+                  {item}
+                </span>
+              ))}
+            </div>
+            {hoverPreviewMoreCount > 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                +{hoverPreviewMoreCount} more companies
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div
         className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl ring-1 ring-border/40 backdrop-blur-sm transition-transform duration-300 group-hover:scale-105 sm:h-[4.5rem] sm:w-[4.5rem] ${iconWrapClass}`}
@@ -136,6 +154,7 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null)
   const [userStats, setUserStats] = useState({ clients: 0, vendors: 0, drivers: 0, travelers: 0 })
   const [recentTransfers, setRecentTransfers] = useState([])
+  const [companySummary, setCompanySummary] = useState([])
   const [todayOverview, setTodayOverview] = useState({
     flightsArriving: 0,
     flightsDeparting: 0,
@@ -175,6 +194,13 @@ const Dashboard = () => {
 
       if (statsResponse.success) setStats(statsResponse.data)
       if (transfersResponse.success) setRecentTransfers(transfersResponse.data || [])
+      // Use a broader transfer set for company count/preview (same source idea as Companies page).
+      const companiesResponse = await fetch(`${API_BASE_URL}/transfers?limit=500`, { headers }).then((res) => res.json())
+      if (companiesResponse.success && Array.isArray(companiesResponse.data)) {
+        setCompanySummary(buildCompaniesFromTransfers(companiesResponse.data))
+      } else {
+        setCompanySummary([])
+      }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
@@ -247,6 +273,18 @@ const Dashboard = () => {
 
   const statusCount = (key) => stats?.byStatus?.[key] || 0
   const todayDate = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const guestCompaniesMeta = useMemo(() => {
+    const companyNames = companySummary.map((c) => c.companyName)
+    const totalFromStats = Number(stats?.guestCompanies || 0)
+    // Keep UI consistent when stats value is stale/zero but preview has companies.
+    const totalCompanies = Math.max(totalFromStats, companyNames.length)
+    const shown = Math.min(5, companyNames.length)
+    return {
+      totalCompanies,
+      items: companyNames.slice(0, 5),
+      moreCount: Math.max(0, totalCompanies - shown)
+    }
+  }, [companySummary, stats?.guestCompanies])
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -302,14 +340,17 @@ const Dashboard = () => {
             />
             <NetworkBigTile
               label="Guest companies"
-              value={stats?.guestCompanies ?? 0}
+              value={guestCompaniesMeta.totalCompanies}
               loading={loading}
-              onClick={() => navigate('/travelers')}
+              onClick={() => navigate('/companies')}
               icon={Building2}
               emphasis
               transitionDelay={0.1}
               gradientClass="bg-gradient-to-br from-teal-500/[0.12] via-card to-cyan-600/[0.08] dark:from-teal-500/15 dark:via-card dark:to-cyan-950/35"
               iconWrapClass="bg-teal-500/20 text-teal-800 dark:text-teal-300"
+              hoverPreviewItems={guestCompaniesMeta.items}
+              hoverPreviewTitle="Companies"
+              hoverPreviewMoreCount={guestCompaniesMeta.moreCount}
             />
           </div>
         </motion.section>
@@ -322,7 +363,6 @@ const Dashboard = () => {
           label="Arrivals today"
           value={stats?.todayArrivals ?? todayOverview?.flightsArriving ?? 0}
           loading={loading}
-          onClick={() => navigate('/flights')}
           transitionDelay={0}
           gradientClass="bg-gradient-to-br from-cyan-500/[0.12] via-card to-teal-600/[0.06] dark:from-cyan-500/15 dark:via-card dark:to-teal-950/30"
           iconWrapClass="bg-cyan-500/15 text-cyan-700 dark:text-cyan-300"
@@ -332,7 +372,6 @@ const Dashboard = () => {
           label="Departures today"
           value={stats?.todayDepartures ?? todayOverview?.flightsDeparting ?? 0}
           loading={loading}
-          onClick={() => navigate('/flights')}
           transitionDelay={0.04}
           gradientClass="bg-gradient-to-br from-emerald-500/[0.12] via-card to-green-600/[0.06] dark:from-emerald-500/15 dark:via-card dark:to-green-950/30"
           iconWrapClass="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
@@ -343,7 +382,6 @@ const Dashboard = () => {
             label="Upcoming"
             value={stats?.upcoming ?? 0}
             loading={loading}
-            onClick={() => navigate('/transfers')}
             transitionDelay={0.08}
             gradientClass="bg-gradient-to-br from-amber-500/[0.12] via-card to-orange-600/[0.06] dark:from-amber-500/14 dark:via-card dark:to-orange-950/28"
             iconWrapClass="bg-amber-500/15 text-amber-800 dark:text-amber-300"
@@ -354,7 +392,6 @@ const Dashboard = () => {
             label="Total transfers"
             value={stats?.total || 0}
             loading={loading}
-            onClick={() => navigate('/transfers')}
             transitionDelay={0.08}
             gradientClass="bg-gradient-to-br from-blue-500/[0.12] via-card to-indigo-600/[0.07] dark:from-blue-500/15 dark:via-card dark:to-indigo-950/35"
             iconWrapClass="bg-blue-500/15 text-blue-700 dark:text-blue-300"
@@ -365,7 +402,6 @@ const Dashboard = () => {
           label="Completed"
           value={statusCount('completed')}
           loading={loading}
-          onClick={() => navigate('/transfers?status=completed')}
           transitionDelay={0.12}
           gradientClass="bg-gradient-to-br from-violet-500/[0.1] via-card to-fuchsia-600/[0.06] dark:from-violet-500/12 dark:via-card dark:to-fuchsia-950/25"
           iconWrapClass="bg-violet-500/15 text-violet-700 dark:text-violet-300"
@@ -401,15 +437,18 @@ const Dashboard = () => {
             />
             <NetworkBigTile
               label="Companies"
-              description="Client organizations."
-              value={userStats.clients}
-              loading={userStatsLoading}
-              onClick={() => navigate('/user-management')}
+              description="Companies coming to this event from transfer records."
+              value={guestCompaniesMeta.totalCompanies}
+              loading={loading}
+              onClick={() => navigate('/companies')}
               icon={Briefcase}
               emphasis
               transitionDelay={0.06}
               gradientClass="bg-gradient-to-br from-sky-500/[0.12] via-card to-blue-600/[0.08] dark:from-sky-500/15 dark:via-card dark:to-blue-950/40"
               iconWrapClass="bg-sky-500/20 text-sky-800 dark:text-sky-300"
+              hoverPreviewItems={guestCompaniesMeta.items}
+              hoverPreviewTitle="Companies"
+              hoverPreviewMoreCount={guestCompaniesMeta.moreCount}
             />
             <NetworkBigTile
               label="Vendors"
@@ -455,16 +494,15 @@ const Dashboard = () => {
         </div>
         <div className="flex flex-wrap gap-2">
           {STATUS_ORDER.map(status => (
-            <button
+            <div
               key={status}
-              onClick={() => navigate(`/transfers?status=${status}`)}
-              className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/30"
+              className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-left"
             >
               <span className="text-lg font-semibold tabular-nums text-foreground">
                 {loading ? '—' : statusCount(status)}
               </span>
               <span className="text-xs text-muted-foreground">{STATUS_LABELS[status]}</span>
-            </button>
+            </div>
           ))}
         </div>
       </motion.div>
