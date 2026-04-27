@@ -399,11 +399,50 @@ export const getGuestNamesFromTransfer = (transfer) => {
   const { travelerName, clientName } = getClientAndTravelerNames(transfer);
   const primaryName = travelerName || (clientName && clientName !== 'N/A' ? clientName : null);
   if (primaryName && String(primaryName).trim()) names.add(String(primaryName).trim());
+  const seenDelegateIds = new Set();
   (transfer.delegates || []).forEach((d) => {
+    const tid = d?.traveler_id?._id || d?.traveler_id?.email || d?.traveler_id;
+    const key = tid ? String(tid) : null;
+    if (key && seenDelegateIds.has(key)) return;
+    if (key) seenDelegateIds.add(key);
     const n = getDelegateDisplayName(d);
     if (n && String(n).trim()) names.add(String(n).trim());
   });
   return [...names];
+};
+
+const normalizeCompanyName = (companyName) => {
+  if (!companyName) return null;
+  const normalized = String(companyName).trim().replace(/\s+/g, ' ');
+  return normalized || null;
+};
+
+const getCompanyNamesFromTransfer = (transfer) => {
+  if (!transfer) return [];
+  const companyNames = [];
+
+  const primaryCandidates = [
+    transfer.customer_details?.company_name,
+    transfer.traveler_id?.profile?.company_name,
+    transfer.traveler_details?.company_name
+  ];
+  primaryCandidates.forEach((name) => {
+    const normalized = normalizeCompanyName(name);
+    if (normalized) companyNames.push(normalized);
+  });
+
+  const seenDelegateIds = new Set();
+  (transfer.delegates || []).forEach((delegate) => {
+    const tid = delegate?.traveler_id?._id || delegate?.traveler_id?.email || delegate?.traveler_id;
+    const key = tid ? String(tid) : null;
+    if (key && seenDelegateIds.has(key)) return;
+    if (key) seenDelegateIds.add(key);
+
+    const delegateCompany = normalizeCompanyName(delegate?.traveler_id?.profile?.company_name);
+    if (delegateCompany) companyNames.push(delegateCompany);
+  });
+
+  return [...new Set(companyNames)];
 };
 
 /**
@@ -417,20 +456,23 @@ export const buildCompaniesFromTransfers = (transfers) => {
   if (!Array.isArray(transfers) || transfers.length === 0) return [];
   const map = new Map();
   for (const t of transfers) {
-    const companyRaw = getCompanyName(t);
-    const companyName = companyRaw && String(companyRaw).trim();
-    if (!companyName) continue;
-    const key = companyName.toLowerCase();
-    if (!map.has(key)) {
-      map.set(key, {
-        companyName,
-        guestNameSet: new Set(),
-        transferIds: new Set()
-      });
-    }
-    const entry = map.get(key);
-    getGuestNamesFromTransfer(t).forEach((n) => entry.guestNameSet.add(n));
-    if (t._id) entry.transferIds.add(String(t._id));
+    const companyNames = getCompanyNamesFromTransfer(t);
+    if (companyNames.length === 0) continue;
+    const guestNames = getGuestNamesFromTransfer(t);
+    const transferId = t._id ? String(t._id) : null;
+    companyNames.forEach((companyName) => {
+      const key = companyName.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          companyName,
+          guestNameSet: new Set(),
+          transferIds: new Set()
+        });
+      }
+      const entry = map.get(key);
+      guestNames.forEach((n) => entry.guestNameSet.add(n));
+      if (transferId) entry.transferIds.add(transferId);
+    });
   }
   return [...map.values()]
     .map((entry) => ({
