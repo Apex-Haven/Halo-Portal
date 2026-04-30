@@ -6,6 +6,8 @@ import { useApi } from '../hooks/useApi';
 import Drawer from './Drawer';
 import toast from 'react-hot-toast';
 
+const MAX_TRAVELERS_PER_CAR = 3;
+
 /**
  * Add a traveler to the same car (delegate) for a transfer.
  * Uses PUT /transfers/:id/client-details with delegates array.
@@ -23,6 +25,8 @@ const AddTravelerInSameCar = ({ transfer, isOpen, onClose, onSuccess }) => {
     ? String(transfer.traveler_id._id || transfer.traveler_id)
     : null;
   const existingDelegates = transfer?.delegates || [];
+  const currentTravelerCount = 1 + existingDelegates.length;
+  const isAtCapacity = currentTravelerCount >= MAX_TRAVELERS_PER_CAR;
   const existingDelegateIds = new Set(
     existingDelegates.map((d) => String(d.traveler_id?._id || d.traveler_id)).filter(Boolean)
   );
@@ -88,6 +92,10 @@ const AddTravelerInSameCar = ({ transfer, isOpen, onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isAtCapacity) {
+      toast.error(`Maximum ${MAX_TRAVELERS_PER_CAR} travelers allowed in the same car`);
+      return;
+    }
     if (!selectedTravelerId || !transfer?._id) {
       toast.error('Please select a traveler');
       return;
@@ -140,6 +148,15 @@ const AddTravelerInSameCar = ({ transfer, isOpen, onClose, onSuccess }) => {
             <p className="text-sm text-muted-foreground">No customer linked to this transfer.</p>
           ) : loadingTravelers ? (
             <p className="text-sm text-muted-foreground">Loading travelers...</p>
+          ) : isAtCapacity ? (
+            <div className="space-y-2">
+              <p className="text-sm text-foreground font-medium">
+                This car is already full ({currentTravelerCount}/{MAX_TRAVELERS_PER_CAR} travelers).
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Remove someone from "Travelers in same car" before adding another traveler.
+              </p>
+            </div>
           ) : availableTravelers.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No other travelers found for this customer. All travelers may already be linked.

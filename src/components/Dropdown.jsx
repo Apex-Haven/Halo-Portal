@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, useId } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Search } from 'lucide-react'
+import { ChevronDown, Search, X } from 'lucide-react'
 
 const Dropdown = ({
   name,
@@ -12,7 +12,8 @@ const Dropdown = ({
   style = {},
   minWidth = '150px',
   searchable = false,
-  searchPlaceholder = 'Search...'
+  searchPlaceholder = 'Search...',
+  clearable = false
 }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 0 })
@@ -192,12 +193,28 @@ const Dropdown = ({
           <span className={`truncate ${selectedOption && normalizedValue !== '' ? 'text-foreground' : 'text-muted-foreground'}`}>
             {(selectedOption && normalizedValue !== '') ? selectedOption.label : placeholder}
           </span>
-          <ChevronDown
-            size={16}
-            className={`text-muted-foreground transition-transform flex-shrink-0 ml-2 ${
-              isOpen ? 'rotate-180' : 'rotate-0'
-            }`}
-          />
+          <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+            {clearable && normalizedValue !== '' && (
+              <button
+                type="button"
+                aria-label="Clear selection"
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onChange({ target: { name, value: '' } })
+                  setIsOpen(false)
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
+            <ChevronDown
+              size={16}
+              className={`text-muted-foreground transition-transform ${
+                isOpen ? 'rotate-180' : 'rotate-0'
+              }`}
+            />
+          </div>
         </div>
 
         {isOpen && typeof document !== 'undefined' && createPortal(
