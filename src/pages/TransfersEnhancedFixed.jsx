@@ -1187,13 +1187,13 @@ const TransfersEnhanced = () => {
                 {displayTraveler || '—'}
               </p>
               {sameCarMulti && (
-                <div className="relative group">
+                <div className="relative group/tooltip">
                   <span
                     className="inline-flex mt-1 text-xs rounded-full border border-teal-500/25 bg-teal-500/10 text-teal-700 dark:text-teal-300 px-2 py-0.5 font-medium cursor-help hover:border-teal-500/50 transition-colors"
                   >
                     Travelers in same car ({cardRow.sameCarGroupSize}/{cardRow.sameCarGroupSize})
                   </span>
-                  <div className="absolute bottom-full left-0 mb-2 w-80 p-3 bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[9999]">
+                  <div className="absolute bottom-full left-0 mb-2 w-80 p-3 bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-[9999]">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                         <Car size={14} className="text-teal-600" />
@@ -1328,13 +1328,13 @@ const TransfersEnhanced = () => {
                       {displayTraveler || '—'}
                     </div>
                     {sameCarMulti && (
-                      <div className="relative group">
+                      <div className="relative group/tooltip">
                         <span
                           className="inline-flex w-fit text-xs rounded-full border border-teal-500/25 bg-teal-500/10 text-teal-700 dark:text-teal-300 px-2 py-0.5 font-medium cursor-help hover:border-teal-500/50 transition-colors"
                         >
                           Travelers in same car ({row.sameCarGroupSize}/{row.sameCarGroupSize})
                         </span>
-                        <div className="absolute bottom-full left-0 mb-2 w-80 p-3 bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[9999]">
+                        <div className="absolute bottom-full left-0 mb-2 w-80 p-3 bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover/tooltip:opacity-100 group-hover/tooltip:visible transition-all duration-200 z-[9999]">
                           <div className="space-y-2">
                             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                               <Car size={14} className="text-teal-600" />
