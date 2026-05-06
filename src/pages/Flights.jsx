@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Search, Plane, MapPin, AlertCircle, User, Filter, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { getTransferDisplayName, getClientAndTravelerNames, formatDateTimeAtAirport, getAirlineDisplay, hasRealFlight, getFlightFieldDisplay } from '../utils/transferUtils'
+import { getTransferDisplayName, getClientAndTravelerNames, formatDateTimeAtAirport, getAirlineDisplay, hasRealFlight, getFlightFieldDisplay, parseDateStr } from '../utils/transferUtils'
+import { getTimezoneForIata } from '../utils/iataTimezones.js'
+import api from '../hooks/useApi'
 
 const Flights = () => {
   const [activeTab, setActiveTab] = useState('all-flights')
@@ -24,6 +26,7 @@ const Flights = () => {
   const [globalFlightData, setGlobalFlightData] = useState(null)
   const [globalLoading, setGlobalLoading] = useState(false)
   const [globalError, setGlobalError] = useState(null)
+  const globalSearchAbortRef = useRef(null)
 
   // Load search state from localStorage and URL params on mount
   useEffect(() => {
@@ -52,35 +55,8 @@ const Flights = () => {
   const fetchAllFlights = async () => {
     try {
       setLoadingFlights(true)
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
-      const token = localStorage.getItem('token')
-      
-      if (!token) {
-        toast.error('Please login to view flights')
-        setAllFlights([])
-        return
-      }
-      
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-      
-      const response = await fetch(`${API_BASE_URL}/transfers`, { headers })
-      
-      if (!response.ok) {
-        if (response.status === 401) {
-          toast.error('Session expired. Please login again.')
-          localStorage.removeItem('token')
-          return
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      
+      const data = await api.get('/transfers')
       if (data.success && data.data) {
-        // Extract flights from transfers (both onward/arrival and return)
         const flights = []
         data.data.forEach(transfer => {
           const { companyName, clientName, travelerName } = getClientAndTravelerNames(transfer)
@@ -93,6 +69,7 @@ const Flights = () => {
             transfer
           }
           if (hasRealFlight(transfer.flight_details)) {
+            const iata = transfer.flight_details.arrival_airport
             flights.push({
               ...base,
               id: `${transfer._id}-onward`,
@@ -100,45 +77,46 @@ const Flights = () => {
               flightNumber: transfer.flight_details.flight_no,
               airline: getFlightFieldDisplay(getAirlineDisplay(transfer.flight_details)),
               departure: getFlightFieldDisplay(transfer.flight_details.departure_airport),
-              arrival: getFlightFieldDisplay(transfer.flight_details.arrival_airport),
+              arrival: getFlightFieldDisplay(iata),
               scheduled_time: transfer.flight_details.scheduled_arrival || transfer.flight_details.arrival_time,
               actual_time: transfer.flight_details.actual_arrival,
               status: transfer.flight_details.flight_status || 'scheduled',
               terminal: transfer.flight_details.terminal,
-              delay_minutes: transfer.flight_details.delay_minutes || 0
+              delay_minutes: transfer.flight_details.delay_minutes || 0,
+              sort_iata: iata
             })
           }
           if (hasRealFlight(transfer.return_flight_details)) {
+            const iata = transfer.return_flight_details.departure_airport || 'KUL'
             flights.push({
               ...base,
               id: `${transfer._id}-return`,
               leg: 'return',
               flightNumber: transfer.return_flight_details.flight_no,
               airline: getFlightFieldDisplay(getAirlineDisplay(transfer.return_flight_details)),
-              departure: getFlightFieldDisplay(transfer.return_flight_details.departure_airport),
+              departure: getFlightFieldDisplay(iata),
               arrival: getFlightFieldDisplay(transfer.return_flight_details.arrival_airport),
               scheduled_time: transfer.return_flight_details.scheduled_departure || transfer.return_flight_details.departure_time,
               actual_time: transfer.return_flight_details.actual_departure,
               status: transfer.return_flight_details.flight_status || 'scheduled',
               terminal: transfer.return_flight_details.terminal,
-              delay_minutes: transfer.return_flight_details.delay_minutes || 0
+              delay_minutes: transfer.return_flight_details.delay_minutes || 0,
+              sort_iata: iata
             })
           }
         })
+        // Sort using airport-aware parsing so timezone offsets don't skew order
         flights.sort((a, b) => {
-          const dateA = new Date(a.scheduled_time || 0)
-          const dateB = new Date(b.scheduled_time || 0)
-          return dateB - dateA // Most recent first
+          const tA = parseDateStr(a.scheduled_time, getTimezoneForIata(a.sort_iata))?.getTime() ?? 0
+          const tB = parseDateStr(b.scheduled_time, getTimezoneForIata(b.sort_iata))?.getTime() ?? 0
+          return tB - tA
         })
-        
         setAllFlights(flights)
       } else {
         setAllFlights([])
       }
     } catch (error) {
-      console.error('Error fetching flights:', error)
       setAllFlights([])
-      toast.error('Failed to fetch flights. Please check your connection.')
     } finally {
       setLoadingFlights(false)
     }
@@ -149,20 +127,17 @@ const Flights = () => {
       toast.error('Please enter a flight number')
       return
     }
+    // Abort any in-flight request before starting a new one
+    globalSearchAbortRef.current?.abort()
+    globalSearchAbortRef.current = new AbortController()
     setGlobalLoading(true)
     setGlobalError(null)
     setGlobalFlightData(null)
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7007/api'
-      const token = localStorage.getItem('token')
-      const params = new URLSearchParams({
-        flight: globalFlightNumber.trim(),
-        date: globalFlightDate
-      })
-      const response = await fetch(`${API_BASE_URL}/flights/global-search?${params}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      const data = await response.json()
+      const data = await api.get(
+        `/flights/global-search?flight=${encodeURIComponent(globalFlightNumber.trim())}&date=${globalFlightDate}`,
+        { signal: globalSearchAbortRef.current.signal }
+      )
       if (data.success) {
         setGlobalFlightData(data.data)
         toast.success('Flight details retrieved')
@@ -171,8 +146,9 @@ const Flights = () => {
         toast.error(data.message || 'Flight not found')
       }
     } catch (err) {
-      setGlobalError(err.message || 'Search failed')
-      toast.error(err.message || 'Search failed')
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return
+      const msg = err.response?.data?.message || err.message || 'Search failed'
+      setGlobalError(msg)
     } finally {
       setGlobalLoading(false)
     }
@@ -247,9 +223,9 @@ const Flights = () => {
       const companyB = (b.companyName || b.clientName || '').toLowerCase()
       return companyA.localeCompare(companyB)
     }
-    const dateA = new Date(a.scheduled_time || 0)
-    const dateB = new Date(b.scheduled_time || 0)
-    return dateB - dateA
+    const tA = parseDateStr(a.scheduled_time, getTimezoneForIata(a.sort_iata))?.getTime() ?? 0
+    const tB = parseDateStr(b.scheduled_time, getTimezoneForIata(b.sort_iata))?.getTime() ?? 0
+    return tB - tA
   })
 
   return (

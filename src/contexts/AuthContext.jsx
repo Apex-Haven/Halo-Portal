@@ -258,8 +258,6 @@ export const AuthProvider = ({ children }) => {
       
       // Real API authentication
       const API_BASE_URL = getApiBaseUrl();
-      console.log('🔐 Attempting login to:', `${API_BASE_URL}/auth/login`);
-      
       const response = await axios.post(`${API_BASE_URL}/auth/login`, {
         email,
         password

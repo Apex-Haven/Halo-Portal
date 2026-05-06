@@ -92,16 +92,61 @@ const getOrdinal = (n) => {
 }
 
 /**
+ * Parse a datetime string correctly regardless of whether it carries a timezone.
+ *
+ * The global-search API returns naive strings like "2026-05-07T12:25:00.000" that
+ * represent the airport's LOCAL wall time (no UTC offset attached).
+ * new Date() would treat those as the browser's local time (IST for us), shifting
+ * the value by hours before we even format it.
+ *
+ * Strategy:
+ *  - If the string already has Z or ±HH:MM → it's a true UTC instant, parse as-is.
+ *  - Otherwise → it's an airport local wall time; we need to interpret it in the
+ *    airport's IANA timezone. We do this by computing the UTC offset for that tz
+ *    at that moment and subtracting it, producing the correct UTC instant.
+ *
+ * @param {string|Date|null|undefined} dateStr
+ * @param {string} [ianaTimezone] - IANA timezone of the airport (e.g. "Asia/Singapore")
+ */
+export const parseDateStr = (dateStr, ianaTimezone) => {
+  if (!dateStr) return null
+  if (typeof dateStr !== 'string') return new Date(dateStr)
+  // Has explicit UTC marker or offset — parse as true UTC instant
+  if (/Z|[+-]\d{2}:\d{2}$/.test(dateStr)) return new Date(dateStr)
+  // Naive string = airport local wall time.
+  // If no timezone provided, fall back to treating it as UTC (best-effort).
+  if (!ianaTimezone) return new Date(dateStr + 'Z')
+  // Convert airport-local wall time → UTC by finding the tz offset at that instant.
+  // Step 1: parse the components
+  const [datePart, timePart = '00:00:00'] = dateStr.split('T')
+  const [year, month, day] = datePart.split('-').map(Number)
+  const [hour, min, sec = 0] = timePart.replace(/\.\d+$/, '').split(':').map(Number)
+  // Step 2: treat the wall time as UTC momentarily to get a candidate epoch
+  const candidate = Date.UTC(year, month - 1, day, hour, min, sec)
+  // Step 3: ask Intl what local time that UTC epoch produces in the airport tz
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ianaTimezone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  }).format(candidate).match(/(\d+)-(\d+)-(\d+)[,\s]+(\d+):(\d+):(\d+)/)
+  // Step 4: compute how far off the candidate was from the actual local time
+  const localEpoch = Date.UTC(+parts[1], +parts[2] - 1, +parts[3], +parts[4], +parts[5], +parts[6])
+  // Step 5: shift the candidate by the difference to get the true UTC instant
+  return new Date(candidate + (candidate - localEpoch))
+}
+
+/**
  * Format an instant in the local wall time of an airport (IATA), matching how times appear on tickets / in sheets.
- * @param {string|Date|null|undefined} dateStr - ISO UTC instant from API
+ * @param {string|Date|null|undefined} dateStr - ISO datetime from API (with or without timezone)
  * @param {string|null|undefined} iataCode - 3-letter IATA (e.g. BOM, SIN); unknown → Malaysia default
  * @returns {string}
  */
 export const formatDateTimeAtAirport = (dateStr, iataCode) => {
   if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return '—'
   const tz = getTimezoneForIata(iataCode)
+  const d = parseDateStr(dateStr, tz)
+  if (!d || isNaN(d.getTime())) return '—'
   const dayNum = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: tz, day: 'numeric' }).format(d), 10)
   const month = new Intl.DateTimeFormat('en-GB', { timeZone: tz, month: 'long' }).format(d)
   const year = new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric' }).format(d)
@@ -119,9 +164,9 @@ export const formatDateTimeAtAirport = (dateStr, iataCode) => {
  */
 export const formatTimeAtAirport = (dateStr, iataCode) => {
   if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return '—'
   const tz = getTimezoneForIata(iataCode)
+  const d = parseDateStr(dateStr, tz)
+  if (!d || isNaN(d.getTime())) return '—'
   return new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     hour: 'numeric',

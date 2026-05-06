@@ -39,7 +39,7 @@ import { startOfDay } from 'date-fns'
 import 'react-datepicker/dist/react-datepicker.css'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { getClientAndTravelerNames, getCompanyName, getDelegateDisplayName, getTransferStatusDisplay, getUniqueTravelerCountAcrossTransfers, getAirlineDisplay, hasRealFlight, getFlightNoDisplay, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateFriendly, formatTransferPickupLocal, formatReturnPickupLocal, formatFlightDepartureLocal, formatFlightArrivalLocal, formatDateTimeAtAirport, expandTransferToCardRows } from '../utils/transferUtils'
+import { getClientAndTravelerNames, getCompanyName, getDelegateDisplayName, getTransferStatusDisplay, getUniqueTravelerCountAcrossTransfers, getAirlineDisplay, hasRealFlight, getFlightNoDisplay, getFlightFieldDisplay, DEFAULT_AIRPORT, DEFAULT_HOTEL, formatDateFriendly, formatTransferPickupLocal, formatReturnPickupLocal, formatFlightDepartureLocal, formatFlightArrivalLocal, formatDateTimeAtAirport, expandTransferToCardRows, parseDateStr } from '../utils/transferUtils'
 import { STATUS_OPTIONS, normalizeStatus } from '../utils/transferFlow'
 import Dropdown from '../components/Dropdown'
 import Drawer from '../components/Drawer'
@@ -235,8 +235,13 @@ const TransfersEnhanced = () => {
     let flightPayload
     if (fetchedFlightData) {
       const d = fetchedFlightData
-      const depTime = d.departureTime ? new Date(d.departureTime) : null
-      const arrTime = d.arrivalTime ? new Date(d.arrivalTime) : null
+      // Parse naive airport-local times using the correct IANA timezone for each airport
+      // so times are stored as accurate UTC instants regardless of the user's local tz.
+      const depAirportForParse = (d.departureAirport || '').trim() || 'KUL'
+      const arrAirportForParse = (d.arrivalAirport || '').trim() || 'KUL'
+      const { getTimezoneForIata: getTz } = await import('../utils/iataTimezones.js')
+      const depTime = parseDateStr(d.departureTime, getTz(depAirportForParse))
+      const arrTime = parseDateStr(d.arrivalTime, getTz(arrAirportForParse))
       if (!depTime || !arrTime || isNaN(depTime.getTime()) || isNaN(arrTime.getTime())) {
         toast.error('Flight data missing departure or arrival time')
         return
@@ -1954,7 +1959,9 @@ const TransfersEnhanced = () => {
                     How this works:
                   </h3>
                   <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
-                    <li>Use a sheet with columns: Company Name, First Name, Last Name, Email, Contact No, Check In Date, Flight No, ETA (onward), Check Out Date, Flight No, ETD (return).</li>
+                    <li>Use a sheet with columns: Company Name, First Name, Last Name, Email, Contact No, onward flight fields, then return flight fields (Check Out Date / Flight No / ETD in the legacy layout).</li>
+                    <li><strong>Onward only (no departure with you):</strong> put <strong>-</strong> in return columns (return flight no, dates, ETD, airports). The transfer is created with inbound details only — no return leg is stored.</li>
+                    <li><strong>No email:</strong> use <strong>-</strong> or leave Email blank; the system assigns a placeholder address so the traveler record can be created (not for real mail).</li>
                     <li>Make the sheet <strong>public</strong> (Share → Anyone with the link can view).</li>
                     <li>Copy the Sheet ID from the URL and paste it below.</li>
                     <li>Each row creates one transfer. For multi-sheet workbooks, set Sheet Tab ID (gid) from the URL <code className="bg-muted px-1 rounded">#gid=123</code>.</li>

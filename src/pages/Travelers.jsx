@@ -1053,7 +1053,7 @@ const Travelers = () => {
                   How to use:
                 </h3>
                 <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
-                  <li>Create a Google Sheet with the following columns: <strong>FirstName</strong>, <strong>LastName</strong>, <strong>Email</strong>, <strong>Phone</strong> (optional), <strong>Client</strong> (optional), <strong>Username</strong> (optional), <strong>Password</strong> (optional)</li>
+                  <li>Create a Google Sheet with the following columns: <strong>FirstName</strong>, <strong>LastName</strong>, <strong>Email</strong> (optional — use <strong>-</strong> or leave blank for a placeholder login email), <strong>Phone</strong> (optional), <strong>Client</strong> (optional), <strong>Username</strong> (optional), <strong>Password</strong> (optional)</li>
                   <li>Make the sheet <strong>public</strong> (File → Share → Anyone with the link can view)</li>
                   <li>Copy the Sheet ID from the URL (the long string between <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">/d/</code> and <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">/edit</code>)</li>
                   <li>Paste the Sheet ID below and click "Sync"</li>
